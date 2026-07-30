@@ -1,15 +1,26 @@
+import argparse
 import base64
 import hashlib
 import socket
 import struct
+import sys
 import threading
+from pathlib import Path
 
 HOST = "127.0.0.1"
 PORT = 8765
+DONE_MESSAGE = "__RHINO_DONE__"
 _MAGIC = b"258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
-_RHINO_MESSAGE = "Hello from Rhino"
-_rhino_confirmed = threading.Event()
-_rhino_output = None
+LOG_PREFIX = "[RHINO-WATCH] "
+
+
+def _log(message, end="\n", file=None):
+    if file is None:
+        file = sys.stdout
+    text = str(message).replace("\n", "\n" + LOG_PREFIX)
+    if text.endswith(LOG_PREFIX):
+        text = text[:-len(LOG_PREFIX)]
+    print(LOG_PREFIX + text, end=end, file=file, flush=True)
 
 
 def _recv_exact(sock, size):
@@ -58,6 +69,7 @@ def _handshake(sock):
         if not chunk:
             raise ConnectionError("websocket connection closed during handshake")
         request += chunk
+
     headers = {}
     for line in request.decode("ascii").split("\r\n")[1:]:
         if ":" in line:
@@ -75,20 +87,41 @@ def _handshake(sock):
     )
 
 
-def serve():
+def _trigger_script(script_path, failed):
+    try:
+        from pipe import run_rhino_script
+
+        run_rhino_script(Path(__file__).with_name("client.py"))
+        run_rhino_script(script_path)
+    except Exception as error:
+        failed.append(error)
+        _log("Rhino trigger failed: {}".format(error), file=sys.stderr)
+
+
+def serve(script_path):
+    done = threading.Event()
+    trigger_error = []
+
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server:
         server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         server.bind((HOST, PORT))
         server.listen()
         server.settimeout(0.2)
-        print("WebSocket server listening on ws://{}:{}".format(HOST, PORT))
-        trigger = threading.Thread(target=_trigger_rhino, daemon=True)
+        _log("WebSocket server listening on ws://{}:{}".format(HOST, PORT))
+
+        trigger = threading.Thread(
+            target=_trigger_script,
+            args=(script_path, trigger_error),
+            daemon=True,
+        )
         trigger.start()
-        while not _rhino_confirmed.is_set():
+
+        while not done.is_set() and not trigger_error:
             try:
-                connection, address = server.accept()
+                connection, _ = server.accept()
             except socket.timeout:
                 continue
+
             with connection:
                 try:
                     _handshake(connection)
@@ -96,17 +129,20 @@ def serve():
                         opcode, payload = _read_frame(connection)
                         if opcode == 1:
                             message = payload.decode("utf-8")
-                            print("{}: {}".format(address, message))
-                            if message == _RHINO_MESSAGE:
-                                global _rhino_output
-                                _rhino_output = message
-                                _rhino_confirmed.set()
+                            if message == DONE_MESSAGE:
+                                done.set()
+                            else:
+                                print(
+                                    message,
+                                    end="" if message.endswith("\n") else "\n",
+                                    flush=True,
+                                )
                             _send_frame(
                                 connection,
                                 1,
                                 ("received: " + message).encode("utf-8"),
                             )
-                            if _rhino_confirmed.is_set():
+                            if done.is_set():
                                 break
                         elif opcode == 8:
                             _send_frame(connection, 8, payload)
@@ -115,24 +151,26 @@ def serve():
                             _send_frame(connection, 10, payload)
                 except (ConnectionError, OSError, KeyError, UnicodeDecodeError):
                     pass
-        trigger.join(timeout=1)
-        print("Rhino output confirmed: {}".format(_rhino_output))
+
+    if done.is_set():
+        _log("WebSocket server closed: End message received")
+
+    trigger.join(timeout=1)
+    if trigger_error:
+        raise trigger_error[0]
 
 
-def _trigger_rhino():
+def main(argv=None):
+    parser = argparse.ArgumentParser(description="Run a script inside Rhino and watch its WebSocket output")
+    parser.add_argument("script", help="Rhino Python script path")
+    args = parser.parse_args(argv)
     try:
-        from pipe import run_rhino_wrapper
-
-        response = run_rhino_wrapper()
-        if response is None or not _rhino_confirmed.wait(10):
-            raise RuntimeError("Rhino wrapper did not confirm its output")
+        serve(args.script)
     except Exception as error:
-        print("Rhino trigger failed: {}".format(error))
-
-
-def main():
-    serve()
+        _log("rhino-watch failed: {}".format(error), file=sys.stderr)
+        return 1
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

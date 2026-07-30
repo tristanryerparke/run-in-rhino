@@ -4,6 +4,13 @@ version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.13"
-dependencies = [
-    "pydantic>=2.13.4",
-]
+dependencies = []
+
+[project.scripts]
+rhino-watch = "server:main"
+
+[tool.uv]
+package = true
+
+[tool.setuptools]
+py-modules = ["server", "pipe", "rhino_watcher", "client"]

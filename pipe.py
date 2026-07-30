@@ -4,12 +4,10 @@ import os
 import socket
 import tempfile
 import time
-from pathlib import Path
 
 
 PIPE_NAME_PREFIX = "rhinocode_remotepipe_"
 SOCKET_NAME_PREFIX = "CoreFxPipe_" + PIPE_NAME_PREFIX
-WRAPPER_PATH = Path(__file__).with_name("rhino_wrapper.py")
 
 
 def _pipe_roots():
@@ -88,9 +86,7 @@ def run_script(script_path, pipe_path=None, attempts=5):
     raise last_error
 
 
-def run_rhino_wrapper(pipe_path=None):
-    return run_script(WRAPPER_PATH, pipe_path=pipe_path)
+def run_rhino_script(script_path, pipe_path=None):
+    return run_script(script_path, pipe_path=pipe_path)
 
 
-if __name__ == "__main__":
-    print(run_rhino_wrapper())
