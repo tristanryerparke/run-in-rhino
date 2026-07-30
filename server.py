@@ -1,17 +1,17 @@
 import argparse
+import asyncio
 import base64
 import hashlib
 import socket
 import struct
 import sys
-import threading
 from pathlib import Path
 
 HOST = "127.0.0.1"
 PORT = 8765
 DONE_MESSAGE = "__RHINO_DONE__"
-_MAGIC = b"258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 LOG_PREFIX = "[RHINO-WATCH] "
+_MAGIC = b"258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 
 
 def _log(message, end="\n", file=None):
@@ -23,34 +23,24 @@ def _log(message, end="\n", file=None):
     print(LOG_PREFIX + text, end=end, file=file, flush=True)
 
 
-def _recv_exact(sock, size):
-    data = b""
-    while len(data) < size:
-        chunk = sock.recv(size - len(data))
-        if not chunk:
-            raise ConnectionError("websocket connection closed")
-        data += chunk
-    return data
-
-
-def _read_frame(sock):
-    first, second = _recv_exact(sock, 2)
+async def _read_frame(reader):
+    first, second = await reader.readexactly(2)
     length = second & 0x7F
     if length == 126:
-        length = struct.unpack("!H", _recv_exact(sock, 2))[0]
+        length = struct.unpack("!H", await reader.readexactly(2))[0]
     elif length == 127:
-        length = struct.unpack("!Q", _recv_exact(sock, 8))[0]
+        length = struct.unpack("!Q", await reader.readexactly(8))[0]
 
     mask = second & 0x80
-    mask_key = _recv_exact(sock, 4) if mask else b""
-    payload = bytearray(_recv_exact(sock, length))
+    mask_key = await reader.readexactly(4) if mask else b""
+    payload = bytearray(await reader.readexactly(length))
     if mask:
         for index in range(length):
             payload[index] ^= mask_key[index % 4]
     return first & 0x0F, bytes(payload)
 
 
-def _send_frame(sock, opcode, payload=b""):
+async def _send_frame(writer, opcode, payload=b""):
     length = len(payload)
     header = bytes([0x80 | opcode])
     if length < 126:
@@ -59,17 +49,12 @@ def _send_frame(sock, opcode, payload=b""):
         header += b"\x7e" + struct.pack("!H", length)
     else:
         header += b"\x7f" + struct.pack("!Q", length)
-    sock.sendall(header + payload)
+    writer.write(header + payload)
+    await writer.drain()
 
 
-def _handshake(sock):
-    request = b""
-    while b"\r\n\r\n" not in request:
-        chunk = sock.recv(4096)
-        if not chunk:
-            raise ConnectionError("websocket connection closed during handshake")
-        request += chunk
-
+async def _handshake(reader, writer):
+    request = await reader.readuntil(b"\r\n\r\n")
     headers = {}
     for line in request.decode("ascii").split("\r\n")[1:]:
         if ":" in line:
@@ -79,93 +64,116 @@ def _handshake(sock):
     accept = base64.b64encode(
         hashlib.sha1(headers["sec-websocket-key"].encode("ascii") + _MAGIC).digest()
     ).decode("ascii")
-    sock.sendall(
+    writer.write(
         ("HTTP/1.1 101 Switching Protocols\r\n"
          "Upgrade: websocket\r\n"
          "Connection: Upgrade\r\n"
          "Sec-WebSocket-Accept: " + accept + "\r\n\r\n").encode("ascii")
     )
+    await writer.drain()
 
 
-def _trigger_script(script_path, failed):
+async def _handle_client(reader, writer, done):
+    try:
+        await _handshake(reader, writer)
+        while True:
+            opcode, payload = await _read_frame(reader)
+            if opcode == 1:
+                message = payload.decode("utf-8")
+                is_done = message == DONE_MESSAGE
+                if not is_done:
+                    print(
+                        message,
+                        end="" if message.endswith("\n") else "\n",
+                        flush=True,
+                    )
+                await _send_frame(
+                    writer,
+                    1,
+                    ("received: " + message).encode("utf-8"),
+                )
+                if is_done:
+                    done.set()
+                    break
+            elif opcode == 8:
+                await _send_frame(writer, 8, payload)
+                break
+            elif opcode == 9:
+                await _send_frame(writer, 10, payload)
+    except (ConnectionError, OSError, KeyError, UnicodeDecodeError,
+            asyncio.IncompleteReadError):
+        pass
+    finally:
+        writer.close()
+        try:
+            await writer.wait_closed()
+        except OSError:
+            pass
+
+
+async def _trigger_script(script_path):
     try:
         from pipe import run_rhino_script
 
-        run_rhino_script(Path(__file__).with_name("client.py"))
-        run_rhino_script(script_path)
-    except Exception as error:
-        failed.append(error)
-        _log("Rhino trigger failed: {}".format(error), file=sys.stderr)
-
-
-def serve(script_path):
-    done = threading.Event()
-    trigger_error = []
-
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server:
-        server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        server.bind((HOST, PORT))
-        server.listen()
-        server.settimeout(0.2)
-        _log("WebSocket server listening on ws://{}:{}".format(HOST, PORT))
-
-        trigger = threading.Thread(
-            target=_trigger_script,
-            args=(script_path, trigger_error),
-            daemon=True,
+        await asyncio.to_thread(
+            run_rhino_script,
+            Path(__file__).with_name("client.py"),
         )
-        trigger.start()
+        await asyncio.to_thread(run_rhino_script, script_path)
+    except Exception as error:
+        _log("Rhino trigger failed: {}".format(error), file=sys.stderr)
+        return error
+    return None
 
-        while not done.is_set() and not trigger_error:
+
+async def serve(script_path):
+    done = asyncio.Event()
+    server = await asyncio.start_server(
+        lambda reader, writer: _handle_client(reader, writer, done),
+        HOST,
+        PORT,
+    )
+    _log("WebSocket server listening on ws://{}:{}".format(HOST, PORT))
+
+    trigger_task = asyncio.create_task(_trigger_script(script_path))
+    done_task = asyncio.create_task(done.wait())
+    try:
+        finished, _ = await asyncio.wait(
+            {trigger_task, done_task},
+            return_when=asyncio.FIRST_COMPLETED,
+        )
+        if trigger_task in finished:
+            error = trigger_task.result()
+            if error is not None:
+                raise error
+            if not done.is_set():
+                await done_task
+        else:
             try:
-                connection, _ = server.accept()
-            except socket.timeout:
-                continue
-
-            with connection:
-                try:
-                    _handshake(connection)
-                    while True:
-                        opcode, payload = _read_frame(connection)
-                        if opcode == 1:
-                            message = payload.decode("utf-8")
-                            if message == DONE_MESSAGE:
-                                done.set()
-                            else:
-                                print(
-                                    message,
-                                    end="" if message.endswith("\n") else "\n",
-                                    flush=True,
-                                )
-                            _send_frame(
-                                connection,
-                                1,
-                                ("received: " + message).encode("utf-8"),
-                            )
-                            if done.is_set():
-                                break
-                        elif opcode == 8:
-                            _send_frame(connection, 8, payload)
-                            break
-                        elif opcode == 9:
-                            _send_frame(connection, 10, payload)
-                except (ConnectionError, OSError, KeyError, UnicodeDecodeError):
-                    pass
+                await asyncio.wait_for(asyncio.shield(trigger_task), 1)
+            except asyncio.TimeoutError:
+                trigger_task.cancel()
+    finally:
+        server.close()
+        await server.wait_closed()
+        if not done_task.done():
+            done_task.cancel()
+        if not trigger_task.done():
+            trigger_task.cancel()
+        await asyncio.gather(done_task, trigger_task, return_exceptions=True)
 
     if done.is_set():
         _log("WebSocket server closed: End message received")
 
-    trigger.join(timeout=1)
-    if trigger_error:
-        raise trigger_error[0]
-
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(description="Run a script inside Rhino and watch its WebSocket output")
+    parser = argparse.ArgumentParser(
+        description="Run a script inside Rhino and watch its WebSocket output"
+    )
     parser.add_argument("script", help="Rhino Python script path")
     args = parser.parse_args(argv)
     try:
-        serve(args.script)
+        asyncio.run(serve(args.script))
     except Exception as error:
         _log("rhino-watch failed: {}".format(error), file=sys.stderr)
         return 1

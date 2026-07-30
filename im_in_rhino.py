@@ -1,19 +1,23 @@
+import asyncio
+
 import Rhino
 
 from rhino_watcher import send_done
 from rhino_watcher import websocket_output
 
 
-with websocket_output():
-    point = Rhino.Geometry.Point3d(1, 2, 3)
-    print(f"RhinoCommon is available: {type(point)}")
+async def main():
+    async with websocket_output():
+        point = Rhino.Geometry.Point3d(1, 2, 3)
+        print(f"RhinoCommon is available: {type(point)}")
+        print("hi")
 
-    print("hi")
+    async with websocket_output():
+        point = Rhino.Geometry.Point3d(1, 2, 3)
+        print(f"RhinoCommon is available: {type(point)}")
+        print("hi2")
 
-with websocket_output():
-    point = Rhino.Geometry.Point3d(1, 2, 3)
-    print(f"RhinoCommon is available: {type(point)}")
+    await send_done()
 
-    print("hi2")
 
-send_done()
+asyncio.run(main())
