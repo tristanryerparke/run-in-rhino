@@ -126,41 +126,54 @@ async def _trigger_script(script_path):
     return None
 
 
-async def serve(script_path):
+async def serve(script_path=None, ready=None):
     done = asyncio.Event()
-    server = await asyncio.start_server(
+    websocket_server = await asyncio.start_server(
         lambda reader, writer: _handle_client(reader, writer, done),
         HOST,
         PORT,
     )
     _log("WebSocket server listening on ws://{}:{}".format(HOST, PORT))
+    if ready is not None:
+        ready.set()
 
-    trigger_task = asyncio.create_task(_trigger_script(script_path))
+    trigger_task = (
+        asyncio.create_task(_trigger_script(script_path))
+        if script_path is not None
+        else None
+    )
     done_task = asyncio.create_task(done.wait())
     try:
+        tasks = {done_task}
+        if trigger_task is not None:
+            tasks.add(trigger_task)
+
         finished, _ = await asyncio.wait(
-            {trigger_task, done_task},
+            tasks,
             return_when=asyncio.FIRST_COMPLETED,
         )
-        if trigger_task in finished:
+        if trigger_task is not None and trigger_task in finished:
             error = trigger_task.result()
             if error is not None:
                 raise error
             if not done.is_set():
                 await done_task
-        else:
+        elif trigger_task is not None:
             try:
                 await asyncio.wait_for(asyncio.shield(trigger_task), 1)
             except asyncio.TimeoutError:
                 trigger_task.cancel()
     finally:
-        server.close()
-        await server.wait_closed()
+        websocket_server.close()
+        await websocket_server.wait_closed()
         if not done_task.done():
             done_task.cancel()
-        if not trigger_task.done():
+        if trigger_task is not None and not trigger_task.done():
             trigger_task.cancel()
-        await asyncio.gather(done_task, trigger_task, return_exceptions=True)
+        tasks = [done_task]
+        if trigger_task is not None:
+            tasks.append(trigger_task)
+        await asyncio.gather(*tasks, return_exceptions=True)
 
     if done.is_set():
         _log("WebSocket server closed: End message received")

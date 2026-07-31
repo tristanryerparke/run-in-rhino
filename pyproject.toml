@@ -13,4 +13,4 @@ rhino-watch = "server:main"
 package = true
 
 [tool.setuptools]
-py-modules = ["server", "pipe", "rhino_watcher", "client"]
+py-modules = ["server", "pipe", "rhino_watcher", "client", "run_in_rhino"]
