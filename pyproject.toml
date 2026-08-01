@@ -7,10 +7,11 @@ requires-python = ">=3.13"
 dependencies = []
 
 [project.scripts]
+in-rhino = "in_rhino:main"
 rhino-watch = "server:main"
 
 [tool.uv]
 package = true
 
 [tool.setuptools]
-py-modules = ["server", "pipe", "rhino_watcher", "client", "run_in_rhino"]
+py-modules = ["in_rhino", "server", "pipe", "rhino_watcher", "client", "run_in_rhino"]
