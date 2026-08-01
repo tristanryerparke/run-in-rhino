@@ -1,4 +1,5 @@
 import asyncio
+import json
 import queue
 import sys
 import threading
@@ -13,7 +14,9 @@ from client import TIMING_ENABLED
 from client import send_message
 from client import send_message_sync
 
-DONE_MESSAGE = "__RHINO_DONE__"
+END_COMMAND = "end"
+QUIT_COMMAND = "quit"
+DONE_COMMAND = END_COMMAND
 TIMING_PREFIX = "[RHINO-WATCH-CLIENT] "
 _async_queue = None
 _async_sender_task = None
@@ -56,7 +59,7 @@ async def _drain_async_queue():
     while True:
         captured = await _async_queue.get()
         try:
-            await send_message(captured)
+            await send_log(captured)
         except Exception as error:
             _async_send_error = error
         finally:
@@ -78,7 +81,7 @@ async def _send_async_capture(captured):
 
 def _send_sync_capture(captured):
     started = time.perf_counter()
-    send_message_sync(captured)
+    send_log_sync(captured)
     elapsed_ms = (time.perf_counter() - started) * 1000
     if TIMING_ENABLED:
         print("{}context exit sync: {:.3f} ms".format(TIMING_PREFIX, elapsed_ms))
@@ -91,7 +94,7 @@ def _drain_sync_queue():
         try:
             if captured is None:
                 return
-            send_message_sync(captured)
+            send_log_sync(captured)
         except Exception as error:
             _sync_send_error = error
         finally:
@@ -145,19 +148,43 @@ def websocket_output_deferred():
             _send_sync_capture_deferred(captured)
 
 
-async def send_done():
+def _message(message_type, **payload):
+    return json.dumps({"type": message_type, **payload}, separators=(",", ":"))
+
+
+async def send_log(message):
+    return await send_message(_message("log", message=str(message)))
+
+
+def send_log_sync(message):
+    return send_message_sync(_message("log", message=str(message)))
+
+
+async def send_data(data):
+    return await send_message(_message("data", data=data))
+
+
+def send_data_sync(data):
+    return send_message_sync(_message("data", data=data))
+
+
+async def send_command(command):
+    return await send_message(_message("command", command=str(command)))
+
+
+def send_command_sync(command):
+    return send_message_sync(_message("command", command=str(command)))
+
+
+async def _send_lifecycle_command(command):
     if _async_queue is not None:
         await _async_queue.join()
     if _async_send_error is not None:
         raise _async_send_error
-    return await send_message(DONE_MESSAGE)
+    return await send_command(command)
 
 
-def send_done_sync():
-    return send_message_sync(DONE_MESSAGE)
-
-
-def send_done_sync_deferred():
+def _send_lifecycle_command_sync_deferred(command):
     if _sync_queue is not None:
         _sync_queue.join()
         if _sync_send_error is not None:
@@ -165,7 +192,36 @@ def send_done_sync_deferred():
         _sync_queue.put(None)
         _sync_queue.join()
         _sync_sender_thread.join()
-    return send_message_sync(DONE_MESSAGE)
+    return send_command_sync(command)
+
+
+async def send_end():
+    return await _send_lifecycle_command(END_COMMAND)
+
+
+def send_end_sync():
+    return send_command_sync(END_COMMAND)
+
+
+def send_end_sync_deferred():
+    return _send_lifecycle_command_sync_deferred(END_COMMAND)
+
+
+async def send_quit():
+    return await _send_lifecycle_command(QUIT_COMMAND)
+
+
+def send_quit_sync():
+    return send_command_sync(QUIT_COMMAND)
+
+
+def send_quit_sync_deferred():
+    return _send_lifecycle_command_sync_deferred(QUIT_COMMAND)
+
+
+send_done = send_end
+send_done_sync = send_end_sync
+send_done_sync_deferred = send_end_sync_deferred
 
 
 if __name__ == "__main__":
@@ -173,6 +229,6 @@ if __name__ == "__main__":
         async with websocket_output():
             print("Hello from Rhino")
             print("stderr from Rhino", file=sys.stderr)
-        await send_done()
+        await send_end()
 
     asyncio.run(main())
