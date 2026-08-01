@@ -1,5 +1,7 @@
 import asyncio
 from pathlib import Path
+from queue import Empty
+from queue import Queue
 from threading import Event
 from threading import Thread
 
@@ -9,17 +11,20 @@ import server
 
 _ROOT = Path(__file__).resolve().parent
 _CLIENT_SCRIPT = _ROOT / "client.py"
-_DONE_SCRIPT = _ROOT / "send_done.py"
+_END_SCRIPT = _ROOT / "send_end.py"
+_QUIT_SCRIPT = _ROOT / "send_quit.py"
 
 
 class RhinoServer:
-    def __init__(self, pipe_path=None):
+    def __init__(self, pipe_path=None, nostop=False):
         self.pipe_path = pipe_path
+        self.nostop = nostop
         self._ready = Event()
         self._done = Event()
         self._error = None
         self._thread = None
         self._warmed_up = False
+        self._data = Queue()
 
     def start(self, timeout=10):
         if self._thread is not None:
@@ -35,7 +40,13 @@ class RhinoServer:
 
     def _run(self):
         try:
-            asyncio.run(server.serve(ready=self._ready))
+            asyncio.run(
+                server.serve(
+                    ready=self._ready,
+                    data_queue=self._data,
+                    stop_on_end=not self.nostop,
+                )
+            )
         except BaseException as error:
             self._error = error
             self._ready.set()
@@ -51,12 +62,28 @@ class RhinoServer:
             self._warmed_up = True
         return pipe.run_rhino_script(script_path, pipe_path=self.pipe_path)
 
-    def run_done_script(self):
-        """Run the Rhino-side script that sends the server done message."""
-        return self.run_file(_DONE_SCRIPT)
+    def take_data(self, timeout=0):
+        data = []
+        try:
+            data.append(self._data.get(timeout=timeout))
+        except Empty:
+            return data
+        while True:
+            try:
+                data.append(self._data.get_nowait())
+            except Empty:
+                return data
+
+    def run_end_script(self):
+        """Run the Rhino-side script that sends an end message."""
+        return self.run_file(_END_SCRIPT)
+
+    def run_quit_script(self):
+        """Run the Rhino-side script that sends a quit message."""
+        return self.run_file(_QUIT_SCRIPT)
 
     def finish(self):
-        return self.run_done_script()
+        return self.run_end_script()
 
     def wait(self, timeout=None):
         if not self._done.wait(timeout):
@@ -67,17 +94,24 @@ class RhinoServer:
 
     def close(self):
         if not self._done.is_set():
-            self.finish()
+            if self.nostop:
+                self.run_quit_script()
+            else:
+                self.finish()
         self.wait()
 
     def __enter__(self):
-        return self.start()
+        return self if self._thread is not None else self.start()
 
     def __exit__(self, exc_type, exc_value, traceback):
         self.close()
         return False
 
 
-def start_server(pipe_path=None, timeout=10):
-    """Start a controllable Rhino watcher without running a file."""
-    return RhinoServer(pipe_path=pipe_path).start(timeout)
+def start_server(pipe_path=None, timeout=10, nostop=False):
+    """Start a controllable Rhino watcher without running a file.
+
+    With ``nostop=True``, an end message leaves the watcher available for
+    subsequent ``run_file()`` calls; the context manager closes it with quit.
+    """
+    return RhinoServer(pipe_path=pipe_path, nostop=nostop).start(timeout)
