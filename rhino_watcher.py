@@ -26,6 +26,34 @@ _sync_sender_thread = None
 _sync_send_error = None
 
 
+class _OutputTee:
+    def __init__(self, stream, capture):
+        self._stream = (
+            stream._stream if isinstance(stream, _OutputTee) else stream
+        )
+        self._capture = capture
+
+    def write(self, text):
+        self._stream.write(text)
+        return self._capture.write(text)
+
+    def flush(self):
+        self._stream.flush()
+        self._capture.flush()
+
+    def __getattr__(self, name):
+        return getattr(self._stream, name)
+
+
+@contextmanager
+def _tee_output():
+    output = StringIO()
+    with redirect_stdout(_OutputTee(sys.stdout, output)), redirect_stderr(
+        _OutputTee(sys.stderr, output)
+    ):
+        yield output
+
+
 async def _drain_async_queue():
     global _async_send_error
     while True:
@@ -89,9 +117,8 @@ def _send_sync_capture_deferred(captured):
 
 @asynccontextmanager
 async def websocket_output():
-    output = StringIO()
     try:
-        with redirect_stdout(output), redirect_stderr(output):
+        with _tee_output() as output:
             yield
     finally:
         captured = output.getvalue()
@@ -101,9 +128,8 @@ async def websocket_output():
 
 @contextmanager
 def websocket_output_sync():
-    output = StringIO()
     try:
-        with redirect_stdout(output), redirect_stderr(output):
+        with _tee_output() as output:
             yield
     finally:
         captured = output.getvalue()
@@ -113,9 +139,8 @@ def websocket_output_sync():
 
 @contextmanager
 def websocket_output_deferred():
-    output = StringIO()
     try:
-        with redirect_stdout(output), redirect_stderr(output):
+        with _tee_output() as output:
             yield
     finally:
         captured = output.getvalue()
