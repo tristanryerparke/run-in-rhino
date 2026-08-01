@@ -148,6 +148,22 @@ def websocket_output_deferred():
             _send_sync_capture_deferred(captured)
 
 
+@contextmanager
+def websocket_output_if_available_sync():
+    """Tee output to the console and watcher when one is available.
+
+    A missing watcher is normal for direct ``in-rhino`` execution, so a
+    connection error is ignored and the Rhino command continues.
+    """
+    try:
+        with _tee_output() as output:
+            yield
+    finally:
+        captured = output.getvalue()
+        if captured:
+            try_send_log_sync(captured)
+
+
 def _message(message_type, **payload):
     return json.dumps({"type": message_type, **payload}, separators=(",", ":"))
 
@@ -158,6 +174,14 @@ async def send_log(message):
 
 def send_log_sync(message):
     return send_message_sync(_message("log", message=str(message)))
+
+
+def try_send_log_sync(message):
+    try:
+        send_log_sync(message)
+    except OSError:
+        return False
+    return True
 
 
 async def send_data(data):
@@ -174,6 +198,14 @@ async def send_command(command):
 
 def send_command_sync(command):
     return send_message_sync(_message("command", command=str(command)))
+
+
+def try_send_command_sync(command):
+    try:
+        send_command_sync(command)
+    except OSError:
+        return False
+    return True
 
 
 async def _send_lifecycle_command(command):
@@ -203,6 +235,10 @@ def send_end_sync():
     return send_command_sync(END_COMMAND)
 
 
+def try_send_end_sync():
+    return try_send_command_sync(END_COMMAND)
+
+
 def send_end_sync_deferred():
     return _send_lifecycle_command_sync_deferred(END_COMMAND)
 
@@ -213,6 +249,10 @@ async def send_quit():
 
 def send_quit_sync():
     return send_command_sync(QUIT_COMMAND)
+
+
+def try_send_quit_sync():
+    return try_send_command_sync(QUIT_COMMAND)
 
 
 def send_quit_sync_deferred():
