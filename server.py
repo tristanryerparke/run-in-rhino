@@ -20,6 +20,24 @@ LEGACY_DONE_COMMAND = "done"
 LOG_PREFIX = "[RHINO-WATCH] "
 _MAGIC = b"258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 _ROOT = str(Path(__file__).resolve().parent)
+_ENVIRONMENT_HEADER = "X-Run-In-Rhino-Environment"
+
+
+def normalize_environment(environment):
+    if environment is None:
+        return None
+    try:
+        values = dict(environment)
+    except (TypeError, ValueError) as error:
+        raise TypeError("environment must be a mapping of strings") from error
+    if not values:
+        return None
+    for name, value in values.items():
+        if not isinstance(name, str) or not isinstance(value, str):
+            raise TypeError("environment names and values must be strings")
+        if not name or "=" in name or "\x00" in name or "\x00" in value:
+            raise ValueError("environment contains an invalid name or value")
+    return values
 
 
 def _log(message, end="\n", file=None):
@@ -61,7 +79,7 @@ async def _send_frame(writer, opcode, payload=b""):
     await writer.drain()
 
 
-async def _handshake(reader, writer):
+async def _handshake(reader, writer, environment=None):
     request = await reader.readuntil(b"\r\n\r\n")
     headers = {}
     for line in request.decode("ascii").split("\r\n")[1:]:
@@ -72,12 +90,18 @@ async def _handshake(reader, writer):
     accept = base64.b64encode(
         hashlib.sha1(headers["sec-websocket-key"].encode("ascii") + _MAGIC).digest()
     ).decode("ascii")
-    writer.write(
-        ("HTTP/1.1 101 Switching Protocols\r\n"
-         "Upgrade: websocket\r\n"
-         "Connection: Upgrade\r\n"
-         "Sec-WebSocket-Accept: " + accept + "\r\n\r\n").encode("ascii")
+    response = (
+        "HTTP/1.1 101 Switching Protocols\r\n"
+        "Upgrade: websocket\r\n"
+        "Connection: Upgrade\r\n"
+        "Sec-WebSocket-Accept: " + accept + "\r\n"
     )
+    if environment is not None:
+        encoded_environment = base64.urlsafe_b64encode(
+            json.dumps(environment, separators=(",", ":")).encode("utf-8")
+        ).decode("ascii")
+        response += _ENVIRONMENT_HEADER + ": " + encoded_environment + "\r\n"
+    writer.write((response + "\r\n").encode("ascii"))
     await writer.drain()
 
 
@@ -89,9 +113,10 @@ async def _handle_client(
     stop_reason,
     stop_on_end,
     stop_on_quit,
+    environment,
 ):
     try:
-        await _handshake(reader, writer)
+        await _handshake(reader, writer, environment)
         while True:
             opcode, payload = await _read_frame(reader)
             if opcode == 1:
@@ -139,7 +164,7 @@ async def _handle_client(
             pass
 
 
-async def _trigger_script(script_path):
+async def _trigger_script(script_path, environment=None):
     try:
         from pipe import run_rhino_script
 
@@ -147,6 +172,11 @@ async def _trigger_script(script_path):
             run_rhino_script,
             Path(__file__).with_name("client.py"),
         )
+        if environment is not None:
+            await asyncio.to_thread(
+                run_rhino_script,
+                Path(__file__).with_name("rhino_environment.py"),
+            )
         await asyncio.to_thread(run_rhino_script, script_path)
     except Exception as error:
         _log("Rhino trigger failed: {}".format(error), file=sys.stderr)
@@ -206,7 +236,9 @@ async def serve(
     data_queue=None,
     stop_on_end=True,
     stop_on_quit=True,
+    environment=None,
 ):
+    environment = normalize_environment(environment)
     _stop_existing_watcher()
     done = asyncio.Event()
     stop_reason = {}
@@ -223,6 +255,7 @@ async def serve(
             stop_reason,
             stop_on_end,
             stop_on_quit,
+            environment,
         ),
         HOST,
         PORT,
@@ -232,7 +265,7 @@ async def serve(
         ready.set()
 
     trigger_task = (
-        asyncio.create_task(_trigger_script(script_path))
+        asyncio.create_task(_trigger_script(script_path, environment))
         if script_path is not None
         else None
     )

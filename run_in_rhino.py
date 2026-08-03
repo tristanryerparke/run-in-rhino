@@ -11,19 +11,22 @@ import server
 
 _ROOT = Path(__file__).resolve().parent
 _CLIENT_SCRIPT = _ROOT / "client.py"
+_ENVIRONMENT_SCRIPT = _ROOT / "rhino_environment.py"
 _END_SCRIPT = _ROOT / "send_end.py"
 _QUIT_SCRIPT = _ROOT / "send_quit.py"
 
 
 class RhinoServer:
-    def __init__(self, pipe_path=None, nostop=False):
+    def __init__(self, pipe_path=None, nostop=False, environment=None):
         self.pipe_path = pipe_path
         self.nostop = nostop
+        self.environment = server.normalize_environment(environment)
         self._ready = Event()
         self._done = Event()
         self._error = None
         self._thread = None
         self._warmed_up = False
+        self._environment_installed = False
         self._data = Queue()
 
     def start(self, timeout=10):
@@ -45,6 +48,7 @@ class RhinoServer:
                     ready=self._ready,
                     data_queue=self._data,
                     stop_on_end=not self.nostop,
+                    environment=self.environment,
                 )
             )
         except BaseException as error:
@@ -60,6 +64,9 @@ class RhinoServer:
         if not self._warmed_up:
             pipe.run_rhino_script(_CLIENT_SCRIPT, pipe_path=self.pipe_path)
             self._warmed_up = True
+        if self.environment is not None and not self._environment_installed:
+            pipe.run_rhino_script(_ENVIRONMENT_SCRIPT, pipe_path=self.pipe_path)
+            self._environment_installed = True
         return pipe.run_rhino_script(script_path, pipe_path=self.pipe_path)
 
     def take_data(self, timeout=0):
@@ -108,10 +115,15 @@ class RhinoServer:
         return False
 
 
-def start_server(pipe_path=None, timeout=10, nostop=False):
+def start_server(pipe_path=None, timeout=10, nostop=False, environment=None):
     """Start a controllable Rhino watcher without running a file.
 
+    ``environment`` is installed in Rhino before the first ``run_file``.
     With ``nostop=True``, an end message leaves the watcher available for
     subsequent ``run_file()`` calls; the context manager closes it with quit.
     """
-    return RhinoServer(pipe_path=pipe_path, nostop=nostop).start(timeout)
+    return RhinoServer(
+        pipe_path=pipe_path,
+        nostop=nostop,
+        environment=environment,
+    ).start(timeout)

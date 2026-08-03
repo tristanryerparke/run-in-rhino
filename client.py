@@ -2,6 +2,7 @@ import asyncio
 import base64
 import hashlib
 import importlib
+import json
 import os
 import socket
 import struct
@@ -14,6 +15,8 @@ PRINT_WARMUP = False
 TIMING_ENABLED = False
 IN_RHINO_PREFIX = "[RHINO-WATCH-CLIENT] "
 _MAGIC = b"258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
+_ENVIRONMENT_HEADER = "x-run-in-rhino-environment"
+_ENVIRONMENT_KEY = "run_in_rhino.environment"
 
 
 async def _recv_exact(reader, size):
@@ -79,6 +82,62 @@ async def send_message(message):
     finally:
         writer.close()
         await writer.wait_closed()
+
+
+def receive_environment_sync():
+    """Receive the watcher-provided environment from the WebSocket upgrade."""
+    key = base64.b64encode(os.urandom(16)).decode("ascii")
+    with socket.create_connection((HOST, PORT)) as connection:
+        connection.sendall(
+            ("GET / HTTP/1.1\r\n"
+             "Host: {}:{}\r\n"
+             "Upgrade: websocket\r\n"
+             "Connection: Upgrade\r\n"
+             "Sec-WebSocket-Key: {}\r\n"
+             "Sec-WebSocket-Version: 13\r\n\r\n").format(
+                 HOST, PORT, key
+             ).encode("ascii")
+        )
+        response = b""
+        while b"\r\n\r\n" not in response:
+            chunk = connection.recv(4096)
+            if not chunk:
+                raise ConnectionError("websocket connection closed during handshake")
+            response += chunk
+
+    expected = base64.b64encode(
+        hashlib.sha1(key.encode("ascii") + _MAGIC).digest()
+    ).decode("ascii")
+    if not response.startswith(b"HTTP/1.1 101") or expected.encode("ascii") not in response:
+        raise ConnectionError("websocket handshake failed")
+
+    headers = {}
+    for line in response.decode("ascii").split("\r\n")[1:]:
+        if ":" in line:
+            name, value = line.split(":", 1)
+            headers[name.lower()] = value.strip()
+    encoded_environment = headers.get(_ENVIRONMENT_HEADER)
+    if encoded_environment is None:
+        return None
+    try:
+        return json.loads(
+            base64.urlsafe_b64decode(encoded_environment.encode("ascii")).decode("utf-8")
+        )
+    except (UnicodeDecodeError, ValueError, json.JSONDecodeError) as error:
+        raise ConnectionError("websocket environment header is invalid") from error
+
+
+def install_environment_sync():
+    """Install a watcher-provided environment in the Rhino Python process."""
+    environment = receive_environment_sync()
+    if environment is None:
+        return False
+
+    import scriptcontext as sc
+
+    os.environ.update(environment)
+    sc.sticky[_ENVIRONMENT_KEY] = environment
+    return True
 
 
 def _recv_exact_sync(connection, size):
