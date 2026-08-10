@@ -25,6 +25,27 @@ with start_server(
 Environment names and values must both be strings. An empty mapping is treated
 as no environment.
 
+### Execute a top-level Rhino command
+
+Use `run_command()` when the operation must create its own Rhino command and undo record rather than run inside a Python script command:
+
+```python
+with start_server(nostop=True, environment={"debug": "true"}) as rhino:
+    rhino.run_file("tests/rhino/prepare_move.py")
+    rhino.run_command("_Move 0,0,0 0,10,0")
+    rhino.run_file("tests/rhino/collect_move.py")
+```
+
+### Command-line debug flag
+
+Run a watched script with `debug=true` in its Rhino environment:
+
+```bash
+uv run rhino-watch commands/setup_tack.py --debug
+```
+
+The CLI explicitly installs `debug=false` when `--debug` is absent. Rhino is a persistent process, so this clears a `debug=true` value left by an earlier debug watcher.
+
 ## Use inside Rhino
 
 The values are available before the first target script executes:
@@ -32,8 +53,8 @@ The values are available before the first target script executes:
 ```python
 import os
 
-if os.getenv("TACK_DEBUG") == "1":
-    print("Tack debug mode is enabled")
+if os.getenv("debug") == "true":
+    print("Debug mode is enabled")
 ```
 
 The complete mapping is also retained for the Rhino session in

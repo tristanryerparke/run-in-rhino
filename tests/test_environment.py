@@ -71,6 +71,37 @@ class RhinoServerEnvironmentTests(unittest.TestCase):
         )
 
 
+class CommandLineEnvironmentTests(unittest.TestCase):
+    def test_debug_flag_sets_the_rhino_environment(self):
+        calls = []
+
+        async def serve(script_path, **kwargs):
+            calls.append((script_path, kwargs))
+
+        with mock.patch.object(server, "serve", serve):
+            self.assertEqual(server.main(["script.py", "--debug"]), 0)
+
+        self.assertEqual(calls, [("script.py", {
+            "stop_on_end": True,
+            "stop_on_quit": True,
+            "environment": {"debug": "true"},
+        })])
+
+    def test_without_debug_explicitly_disables_stale_rhino_debug(self):
+        calls = []
+
+        async def serve(script_path, **kwargs):
+            calls.append((script_path, kwargs))
+
+        with mock.patch.object(server, "serve", serve):
+            self.assertEqual(server.main(["script.py"]), 0)
+
+        self.assertEqual(
+            calls[0][1]["environment"],
+            {"debug": "false"},
+        )
+
+
 class EnvironmentValidationTests(unittest.TestCase):
     def test_empty_environment_disables_transport(self):
         self.assertIsNone(server.normalize_environment({}))

@@ -321,6 +321,11 @@ def main(argv=None):
         help="Keep watching after an end message; quit still stops the server.",
     )
     parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="Make debug=true available to the Rhino script environment.",
+    )
+    parser.add_argument(
         "--noquit",
         action="store_true",
         help="Keep watching after both end and quit messages.",
@@ -332,6 +337,9 @@ def main(argv=None):
                 args.script,
                 stop_on_end=not (args.nostop or args.noquit),
                 stop_on_quit=not args.noquit,
+                environment={
+                    "debug": "true" if args.debug else "false",
+                },
             )
         )
     except Exception as error:

@@ -86,6 +86,30 @@ def run_script(script_path, pipe_path=None, attempts=5):
     raise last_error
 
 
+def run_command(command, pipe_path=None, attempts=5):
+    if not isinstance(command, str) or not command:
+        raise ValueError("command must be a non-empty string")
+
+    payload = {
+        "$meta": {"version": "1.0"},
+        "$type": "job",
+        "endpoint": "command",
+        "payload": command,
+    }
+    last_error = None
+    for attempt in range(attempts):
+        try:
+            response = _send_request(payload, _resolve_pipe(pipe_path))
+            if response is not None:
+                return response
+            last_error = RuntimeError("Rhino returned no response")
+        except (FileNotFoundError, ConnectionRefusedError, OSError, RuntimeError) as error:
+            last_error = error
+        if attempt < attempts - 1:
+            time.sleep(0.05)
+    raise last_error
+
+
 def run_rhino_script(script_path, pipe_path=None):
     return run_script(script_path, pipe_path=pipe_path)
 
