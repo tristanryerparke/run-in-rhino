@@ -67,16 +67,24 @@ async def handle_client(ws, context, stopped_by, received_data):
         raise
 
 
-async def main(address="127.0.0.1", port=8765, context=None):
+async def main(address="127.0.0.1", port=8765, context=None, started=None):
     """Run until a lifecycle event or invalid client message occurs."""
     if context is None:
         context = RunContext()
     stopped_by = asyncio.get_running_loop().create_future()
     received_data = []
-    async with serve(
-        lambda ws: handle_client(ws, context, stopped_by, received_data),
-        address,
-        port,
-    ) as server:
-        print("Server listening on ws://{}:{}".format(address, port))
-        return await stopped_by, received_data
+    try:
+        async with serve(
+            lambda ws: handle_client(ws, context, stopped_by, received_data),
+            address,
+            port,
+            close_timeout=0,
+        ) as server:
+            if started is not None:
+                started.set_result(None)
+            print("Server listening on ws://{}:{}".format(address, port))
+            return await stopped_by, received_data
+    except BaseException as error:
+        if started is not None and not started.done():
+            started.set_exception(error)
+        raise

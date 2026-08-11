@@ -1,4 +1,5 @@
 #! python 3
+# r: websocket-client
 # To be run in rhino
 
 import json

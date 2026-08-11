@@ -48,13 +48,16 @@ def test_debug_to_server_can_send_without_printing(capsys):
     assert connection.output == ["'one'"]
 
 
-def test_output_parasite_sends_stdout_and_stderr():
+def test_output_parasite_sends_stdout_and_stderr(capsys):
     connection = Connection()
 
     with OutputParasite(connection):
         print("stdout")
         print("stderr", file=sys.stderr)
 
+    captured = capsys.readouterr()
+    assert captured.out == "stdout\n"
+    assert captured.err == "stderr\n"
     assert connection.output == ["stdout\nstderr\n"]
 
 
