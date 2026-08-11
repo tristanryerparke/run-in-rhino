@@ -3,7 +3,6 @@ import json
 import os
 import socket
 import tempfile
-import time
 
 
 PIPE_NAME_PREFIX = "rhinocode_remotepipe_"
@@ -62,7 +61,8 @@ def _send_request(payload, pipe_path):
         return {"raw_response": response}
 
 
-def run_script(script_path, pipe_path=None, attempts=5):
+def run_script(script_path, pipe_path=None):
+    """Runs a python script in  rhino via the rhinocode pipe"""
     script_path = os.path.abspath(str(script_path))
     if not os.path.isfile(script_path):
         raise FileNotFoundError("Script not found: " + script_path)
@@ -72,21 +72,14 @@ def run_script(script_path, pipe_path=None, attempts=5):
         "$type": "script",
         "location": script_path,
     }
-    last_error = None
-    for attempt in range(attempts):
-        try:
-            response = _send_request(payload, _resolve_pipe(pipe_path))
-            if response is not None:
-                return response
-            last_error = RuntimeError("Rhino returned no response")
-        except (FileNotFoundError, ConnectionRefusedError, OSError, RuntimeError) as error:
-            last_error = error
-        if attempt < attempts - 1:
-            time.sleep(0.05)
-    raise last_error
+    response = _send_request(payload, _resolve_pipe(pipe_path))
+    if response is None:
+        raise RuntimeError("Rhino returned no response")
+    return response
 
 
-def run_command(command, pipe_path=None, attempts=5):
+def run_command(command, pipe_path=None):
+    """Runs a rhino command in rhino via the rhinocode pipe"""
     if not isinstance(command, str) or not command:
         raise ValueError("command must be a non-empty string")
 
@@ -96,21 +89,8 @@ def run_command(command, pipe_path=None, attempts=5):
         "endpoint": "command",
         "payload": command,
     }
-    last_error = None
-    for attempt in range(attempts):
-        try:
-            response = _send_request(payload, _resolve_pipe(pipe_path))
-            if response is not None:
-                return response
-            last_error = RuntimeError("Rhino returned no response")
-        except (FileNotFoundError, ConnectionRefusedError, OSError, RuntimeError) as error:
-            last_error = error
-        if attempt < attempts - 1:
-            time.sleep(0.05)
-    raise last_error
-
-
-def run_rhino_script(script_path, pipe_path=None):
-    return run_script(script_path, pipe_path=pipe_path)
-
+    response = _send_request(payload, _resolve_pipe(pipe_path))
+    if response is None:
+        raise RuntimeError("Rhino returned no response")
+    return response
 

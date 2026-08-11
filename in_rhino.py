@@ -2,7 +2,7 @@ import argparse
 import json
 import sys
 
-from pipe import run_rhino_script
+from pipe import run_script
 
 
 def main(argv=None):
@@ -17,7 +17,7 @@ def main(argv=None):
     args = parser.parse_args(argv)
 
     try:
-        result = run_rhino_script(args.script, pipe_path=args.pipe_path)
+        result = run_script(args.script, pipe_path=args.pipe_path)
     except Exception as error:
         print("in-rhino failed: {}".format(error), file=sys.stderr)
         return 1

@@ -42,7 +42,7 @@ class RhinoServerEnvironmentTests(unittest.TestCase):
     def test_no_environment_skips_the_environment_bootstrap(self):
         watcher = run_in_rhino.RhinoServer(environment={})
 
-        with mock.patch.object(run_in_rhino.pipe, "run_rhino_script") as run_script:
+        with mock.patch.object(run_in_rhino.pipe, "run_script") as run_script:
             watcher.run_file("target.py")
 
         self.assertEqual(
@@ -56,7 +56,7 @@ class RhinoServerEnvironmentTests(unittest.TestCase):
     def test_environment_bootstraps_once_before_the_target(self):
         watcher = run_in_rhino.RhinoServer(environment={"TACK_DEBUG": "1"})
 
-        with mock.patch.object(run_in_rhino.pipe, "run_rhino_script") as run_script:
+        with mock.patch.object(run_in_rhino.pipe, "run_script") as run_script:
             watcher.run_file("first.py")
             watcher.run_file("second.py")
 

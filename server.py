@@ -166,18 +166,18 @@ async def _handle_client(
 
 async def _trigger_script(script_path, environment=None):
     try:
-        from pipe import run_rhino_script
+        from pipe import run_script
 
         await asyncio.to_thread(
-            run_rhino_script,
+            run_script,
             Path(__file__).with_name("client.py"),
         )
         if environment is not None:
             await asyncio.to_thread(
-                run_rhino_script,
+                run_script,
                 Path(__file__).with_name("rhino_environment.py"),
             )
-        await asyncio.to_thread(run_rhino_script, script_path)
+        await asyncio.to_thread(run_script, script_path)
     except Exception as error:
         _log("Rhino trigger failed: {}".format(error), file=sys.stderr)
         return error

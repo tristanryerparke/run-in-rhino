@@ -61,16 +61,16 @@ class RhinoServer:
         if self._done.is_set():
             raise RuntimeError("Rhino server is not running")
         if not self._warmed_up:
-            pipe.run_rhino_script(_CLIENT_SCRIPT, pipe_path=self.pipe_path)
+            pipe.run_script(_CLIENT_SCRIPT, pipe_path=self.pipe_path)
             self._warmed_up = True
         if self.environment is not None and not self._environment_installed:
-            pipe.run_rhino_script(_ENVIRONMENT_SCRIPT, pipe_path=self.pipe_path)
+            pipe.run_script(_ENVIRONMENT_SCRIPT, pipe_path=self.pipe_path)
             self._environment_installed = True
 
     def run_file(self, script_path):
         """Execute a Python file inside Rhino while this server is running."""
         self._ensure_rhino_ready()
-        return pipe.run_rhino_script(script_path, pipe_path=self.pipe_path)
+        return pipe.run_script(script_path, pipe_path=self.pipe_path)
 
     def run_command(self, command):
         """Execute a top-level Rhino command while this server is running."""

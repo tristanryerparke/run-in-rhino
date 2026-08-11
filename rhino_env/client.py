@@ -14,6 +14,12 @@ class SocketConnection:
         self.ws.send(message)
         response = self.ws.recv()
         return response
+    
+    def get_env(self):
+        """Retrives a dict of environment variables from the server"""
+        env_raw = self._send(json.dumps({"type": "env"}))
+        env = json.loads(env_raw)
+        return env
 
     def send_data(self, data: str):
         return self._send(json.dumps({"type": "data", "data": data}))
@@ -33,6 +39,7 @@ if __name__ == '__main__':
     
     wsc = SocketConnection()
     # wsc.send("mf")
-    
+    env = wsc.get_env()
+    print(env)
     wsc.send_data("mf1000")
     wsc.send_quit()

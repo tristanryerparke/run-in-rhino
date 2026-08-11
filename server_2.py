@@ -1,6 +1,6 @@
 import asyncio
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from websockets.asyncio.server import serve
 
@@ -19,6 +19,7 @@ class RunContext:
     """Stores context for the server so it can decide what messages to exit on"""
     stop: bool = True
     quit: bool = True
+    env: dict = field(default_factory=dict)
 
 
 async def handle_client(ws, context, stopped_by, received_data):
@@ -44,6 +45,8 @@ async def handle_client(ws, context, stopped_by, received_data):
             elif message_type == "data":
                 received_data.append(message.get("data"))
                 await ws.send("received")
+            elif message_type == "env":
+                await ws.send(json.dumps(context.env))
             elif message_type == "done":
                 await ws.send("received")
                 if context.stop and not stopped_by.done():
