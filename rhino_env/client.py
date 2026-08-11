@@ -24,7 +24,7 @@ class SocketConnection:
         env = json.loads(env_raw)
         return env
 
-    def send_data(self, data: str):
+    def send_data(self, data):
         return self._send(json.dumps({"type": "data", "data": data}))
 
     def send_terminal(self, output: str):

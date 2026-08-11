@@ -23,22 +23,16 @@ class RunContext:
 
 
 async def handle_client(ws, context, stopped_by, received_data):
-    """Receive Rhino lifecycle events and raise invalid client messages."""
+    """Receive Rhino lifecycle events and collect data messages."""
     try:
         async for message_raw in ws:
-            
-            # Parse the message and raise exceptions if it is bad
             try:
                 message = json.loads(message_raw)
             except json.JSONDecodeError:
-                raise BadClientMessageException(message_raw) from None
-            if not isinstance(message, dict):
-                raise BadClientMessageException(message_raw)
-            message_type = message.get("type")
-            if not isinstance(message_type, str) or not message_type:
-                raise NoClientMessageTypeException(message_raw)
+                message = None
 
-            # Parse the message type and act
+            message_type = message.get("type") if isinstance(message, dict) else None
+
             if message_type == "terminal":
                 print(message.get("data", ""))
                 await ws.send("received")
@@ -58,7 +52,8 @@ async def handle_client(ws, context, stopped_by, received_data):
                     stopped_by.set_result(message_type)
                     return
             else:
-                raise UnknownMessageTypeException(message_raw)
+                received_data.append(message_raw)
+                await ws.send("received")
 
     # Forward exceptions to the main loop
     except BaseException as error:
@@ -68,7 +63,7 @@ async def handle_client(ws, context, stopped_by, received_data):
 
 
 async def main(address="127.0.0.1", port=8765, context=None, started=None):
-    """Run until a lifecycle event or invalid client message occurs."""
+    """Run until a lifecycle event occurs."""
     if context is None:
         context = RunContext()
     stopped_by = asyncio.get_running_loop().create_future()
