@@ -2,12 +2,14 @@
 # To be run in rhino
 
 import json
+from io import StringIO
+
 from websocket import create_connection
 
 class SocketConnection:
-    """class to handle the websocket client connection lifecycle"""
+    """Handles connection to a watcher websocket server.
+    Meant for devlopment or other close observation of scripts running in rhino"""
     def __init__(self, host: str = "127.0.0.1", port: int = 8765):
-        
         self.ws = create_connection(f"ws://{host}:{port}")
 
     def _send(self, message: str):
@@ -33,7 +35,17 @@ class SocketConnection:
     def send_quit(self):
         return self._send(json.dumps({"type": "quit"}))
 
+
+def debug_to_server(data, connection=None, send_only=False):
+    """Print text locally and optionally send the same text 
+    to a provided watcher server connection."""
+    output = StringIO()
+    if not send_only:
+        print(data)
+    if connection:
+        connection.send_terminal(repr(data))
     
+
 
 if __name__ == '__main__': 
     

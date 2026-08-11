@@ -1,0 +1,97 @@
+import importlib.util
+import sys
+from pathlib import Path
+
+import pytest
+
+
+project_root = Path(__file__).parents[1]
+rhino_env = project_root / "rhino_env"
+client_spec = importlib.util.spec_from_file_location(
+    "rhino_env_client",
+    rhino_env / "client.py",
+)
+client = importlib.util.module_from_spec(client_spec)
+client_spec.loader.exec_module(client)
+spec = importlib.util.spec_from_file_location(
+    "rhino_env.parasite",
+    rhino_env / "parasite.py",
+)
+parasite = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(parasite)
+OutputParasite = parasite.OutputParasite
+
+
+class Connection:
+    def __init__(self):
+        self.output = []
+
+    def send_terminal(self, output):
+        self.output.append(output)
+
+
+def test_debug_to_server_prints_and_sends_by_default(capsys):
+    connection = Connection()
+
+    client.debug_to_server("one", connection=connection)
+
+    assert capsys.readouterr().out == "one\n"
+    assert connection.output == ["'one'"]
+
+
+def test_debug_to_server_can_send_without_printing(capsys):
+    connection = Connection()
+
+    client.debug_to_server("one", connection=connection, send_only=True)
+
+    assert capsys.readouterr().out == ""
+    assert connection.output == ["'one'"]
+
+
+def test_output_parasite_sends_stdout_and_stderr():
+    connection = Connection()
+
+    with OutputParasite(connection):
+        print("stdout")
+        print("stderr", file=sys.stderr)
+
+    assert connection.output == ["stdout\nstderr\n"]
+
+
+def test_output_parasite_flush_sends_output_early():
+    connection = Connection()
+
+    with OutputParasite(connection) as output:
+        print("first")
+        output.flush()
+        print("second")
+
+    assert connection.output == ["first\n", "second\n"]
+
+
+def test_output_parasite_preserves_wrapped_exceptions():
+    connection = Connection()
+
+    with pytest.raises(ValueError, match="failed"):
+        with OutputParasite(connection):
+            print("before failure")
+            raise ValueError("failed")
+
+    assert connection.output == ["before failure\n"]
+
+
+class UnavailableConnection:
+    def send_terminal(self, output):
+        raise OSError("connection refused")
+
+
+def test_output_parasite_runs_without_a_connection():
+    with OutputParasite() as output:
+        print("captured without a connection")
+
+    assert output.output.getvalue() == "captured without a connection\n"
+
+
+def test_output_parasite_ignores_send_failures():
+    with OutputParasite(UnavailableConnection()):
+        print("still runs")
