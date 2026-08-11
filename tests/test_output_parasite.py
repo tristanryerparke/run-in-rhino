@@ -72,6 +72,22 @@ def test_output_parasite_flush_sends_output_early():
     assert connection.output == ["first\n", "second\n"]
 
 
+def test_output_parasite_can_send_done_after_output():
+    events = []
+
+    class LifecycleConnection:
+        def send_terminal(self, output):
+            events.append(("terminal", output))
+
+        def send_done(self):
+            events.append(("done", None))
+
+    with OutputParasite(LifecycleConnection(), done_msg=True):
+        print("finished")
+
+    assert events == [("terminal", "finished\n"), ("done", None)]
+
+
 def test_output_parasite_preserves_wrapped_exceptions():
     connection = Connection()
 

@@ -12,11 +12,15 @@ dependencies = [
 ]
 
 [project.scripts]
-in-rhino = "in_rhino:main"
-rhino-watch = "server:main"
+in-rhino = "cli:in_rhino"
+rhino-watch = "cli:rhino_watch"
 
 [tool.uv]
 package = true
 
 [tool.setuptools]
-py-modules = ["in_rhino", "server", "pipe", "rhino_watcher", "client", "rhino_environment", "run_in_rhino"]
+py-modules = ["cli", "orchestration", "server_2", "pipe"]
+
+[tool.setuptools.packages.find]
+include = ["rhino_env*"]
+namespaces = true

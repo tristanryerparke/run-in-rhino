@@ -4,7 +4,7 @@ from pipe import run_script
 from server_2 import main
 
 
-async def run_rhino_python_til_done(script_path, pipe_path=None, context=None):
+async def run_rhino_python_til_done(script_path, context=None):
     """Start the server, run a Rhino script, and wait for the server to exit."""
     started = asyncio.get_running_loop().create_future()
     server_task = asyncio.create_task(main(context=context, started=started))
@@ -14,7 +14,6 @@ async def run_rhino_python_til_done(script_path, pipe_path=None, context=None):
         await asyncio.to_thread(
             run_script,
             script_path,
-            pipe_path=pipe_path,
         )
         return await server_task
     except BaseException:

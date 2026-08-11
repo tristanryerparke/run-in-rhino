@@ -2,17 +2,20 @@
 
 import Rhino
 
-
-from rhino_env.client import SocketConnection
+try:
+    from rhino_env.client import SocketConnection
+    connection = SocketConnection()
+except:
+    connection = None
 from rhino_env.parasite import OutputParasite
 
 
-connection = SocketConnection()
 
-try:
+
+print('outside')
+
+with OutputParasite(connection, done_msg=True):
     print("mf100")
-    with OutputParasite(connection):
-        point = Rhino.Geometry.Point3d(1, 2, 3)
-        print("Created point: {}".format(point))
-finally:
-    connection.send_done()
+    point = Rhino.Geometry.Point3d(1, 2, 3)
+    print("Created point: {}".format(point))
+

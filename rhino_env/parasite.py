@@ -29,6 +29,7 @@ class OutputParasite:
     within the context to a provided websocket server."""
     def __init__(self, connection=None, done_msg=False):
         self.connection = connection
+        self.done_msg = done_msg
         self.output = StringIO()
         self._stdout = redirect_stdout(_OutputRecorder(sys.stdout, self.output))
         self._stderr = redirect_stderr(_OutputRecorder(sys.stderr, self.output))
@@ -55,4 +56,6 @@ class OutputParasite:
         self._stderr.__exit__(exc_type, exc_value, traceback)
         self._stdout.__exit__(exc_type, exc_value, traceback)
         self.flush()
+        if self.done_msg and self.connection is not None:
+            self.connection.send_done()
         return False
