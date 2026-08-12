@@ -1,7 +1,7 @@
 from unittest.mock import patch
 
-import cli
-from server_2 import RunContext
+import run_in_rhino.cli as cli
+from run_in_rhino.server import RunContext
 
 
 def test_main_runs_script_with_default_context():

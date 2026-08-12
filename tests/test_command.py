@@ -1,6 +1,6 @@
 from unittest.mock import patch
 
-import pipe
+import run_in_rhino.pipe as pipe
 
 
 def test_run_command_sends_rhino_job_request():

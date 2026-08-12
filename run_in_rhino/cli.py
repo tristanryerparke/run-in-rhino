@@ -3,9 +3,9 @@ import asyncio
 import json
 import sys
 
-from orchestration import run_rhino_python_til_done
-from pipe import run_script
-from server_2 import RunContext
+from .orchestration import run_rhino_python_til_done
+from .pipe import run_script
+from .server import RunContext
 
 
 def rhino_watch(argv=None):

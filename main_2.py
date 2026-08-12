@@ -1,8 +1,8 @@
 import asyncio
 
-from server_2 import main, RunContext
+from run_in_rhino.server import RunContext, main
 
-rc = RunContext(env={"mf":"mf1000"})
+rc = RunContext(env={"mf": "mf1000"})
 
 
 reason, data = asyncio.run(main(context=rc))

@@ -1,11 +1,13 @@
-"""Create a box in Rhino and round-trip its measured dimensions."""
+"""Example test file for another library, showing how to send data 
+to and recieve data from a script that gets run in rhino, 
+and use it to run a real test"""
 
 import asyncio
 import json
 from pathlib import Path
 
-from orchestration import run_rhino_python_til_done
-from server_2 import RunContext
+from run_in_rhino.orchestration import run_rhino_python_til_done
+from run_in_rhino.server import RunContext
 
 
 BOX_DIMS = [5, 5, 5]
@@ -18,8 +20,8 @@ import scriptcontext as sc
 
 sys.path.insert(0, {str(PROJECT_ROOT)!r})
 
-from rhino_env.client import SocketConnection
-from rhino_env.env import STICKY_ENVIRONMENT_KEY, install_sticky_environment
+from run_in_rhino.rhino_env.client import SocketConnection
+from run_in_rhino.rhino_env.env import STICKY_ENVIRONMENT_KEY, install_sticky_environment
 
 connection = SocketConnection()
 install_sticky_environment(connection)

@@ -2,8 +2,8 @@ import asyncio
 import os
 import tempfile
 
-from pipe import run_script
-from server_2 import main
+from .pipe import run_script
+from .server import main
 
 
 async def run_rhino_python_til_done(script_path=None, context=None, *, script=None):
@@ -40,6 +40,6 @@ async def run_rhino_python_til_done(script_path=None, context=None, *, script=No
 
 
 if __name__ == "__main__":
-    reason, data = asyncio.run(run_rhino_python_til_done("test_new.py"))
+    reason, data = asyncio.run(run_rhino_python_til_done("demos/parasite_usage.py"))
     print("Server stopped because:", reason)
 

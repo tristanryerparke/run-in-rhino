@@ -7,7 +7,7 @@ import sys
 
 
 def install_library_path():
-    """Make the directory containing ``rhino_env`` importable in Rhino."""
+    """Make the directory containing ``run_in_rhino`` importable in Rhino."""
     package_root = os.path.dirname(
         os.path.dirname(os.path.abspath(__file__))
     )

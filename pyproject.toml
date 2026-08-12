@@ -12,15 +12,16 @@ dependencies = [
 ]
 
 [project.scripts]
-in-rhino = "cli:in_rhino"
-rhino-watch = "cli:rhino_watch"
+in-rhino = "run_in_rhino.cli:in_rhino"
+rhino-watch = "run_in_rhino.cli:rhino_watch"
 
 [tool.uv]
 package = true
 
-[tool.setuptools]
-py-modules = ["cli", "orchestration", "server_2", "pipe"]
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
-include = ["rhino_env*"]
-namespaces = true
+include = ["run_in_rhino*"]
+namespaces = false

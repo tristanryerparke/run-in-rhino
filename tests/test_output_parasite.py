@@ -1,25 +1,9 @@
-import importlib.util
 import sys
-from pathlib import Path
 
 import pytest
 
-
-project_root = Path(__file__).parents[1]
-rhino_env = project_root / "rhino_env"
-client_spec = importlib.util.spec_from_file_location(
-    "rhino_env_client",
-    rhino_env / "client.py",
-)
-client = importlib.util.module_from_spec(client_spec)
-client_spec.loader.exec_module(client)
-spec = importlib.util.spec_from_file_location(
-    "rhino_env.parasite",
-    rhino_env / "parasite.py",
-)
-parasite = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(parasite)
-OutputParasite = parasite.OutputParasite
+from run_in_rhino.rhino_env import client
+from run_in_rhino.rhino_env.parasite import OutputParasite
 
 
 class Connection:
