@@ -61,21 +61,40 @@ def _send_request(payload, pipe_path):
         return {"raw_response": response}
 
 
-def run_script(script_path, pipe_path=None):
-    """Runs a python script in  rhino via the rhinocode pipe"""
-    script_path = os.path.abspath(str(script_path))
-    if not os.path.isfile(script_path):
-        raise FileNotFoundError("Script not found: " + script_path)
+def run_script(script_path=None, pipe_path=None, *, script=None):
+    """Run a Python file or source text in Rhino via the RhinoCode pipe."""
+    if (script_path is None) == (script is None):
+        raise ValueError("Provide exactly one of script_path or script")
 
-    payload = {
-        "$meta": {"version": "1.0"},
-        "$type": "script",
-        "location": script_path,
-    }
-    response = _send_request(payload, _resolve_pipe(pipe_path))
-    if response is None:
-        raise RuntimeError("Rhino returned no response")
-    return response
+    temp_path = None
+    try:
+        if script is not None:
+            with tempfile.NamedTemporaryFile(
+                "w",
+                suffix=".py",
+                encoding="utf-8",
+                delete=False,
+            ) as file:
+                file.write(script)
+                temp_path = file.name
+            script_path = temp_path
+
+        script_path = os.path.abspath(str(script_path))
+        if not os.path.isfile(script_path):
+            raise FileNotFoundError("Script not found: " + script_path)
+
+        payload = {
+            "$meta": {"version": "1.0"},
+            "$type": "script",
+            "location": script_path,
+        }
+        response = _send_request(payload, _resolve_pipe(pipe_path))
+        if response is None:
+            raise RuntimeError("Rhino returned no response")
+        return response
+    finally:
+        if temp_path is not None:
+            os.unlink(temp_path)
 
 
 def run_command(command, pipe_path=None):

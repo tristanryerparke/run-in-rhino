@@ -1,14 +1,16 @@
-import asyncio
 import json
 from dataclasses import dataclass, field
 
-from websockets.asyncio.server import serve
+from run_in_rhino.socket import WebSocketServer
+
 
 class BadClientMessageException(RuntimeError):
     pass
 
+
 class NoClientMessageTypeException(RuntimeError):
     pass
+
 
 class UnknownMessageTypeException(RuntimeError):
     pass
@@ -17,69 +19,55 @@ class UnknownMessageTypeException(RuntimeError):
 @dataclass(frozen=True)
 class RunContext:
     """Stores context for the server so it can decide what messages to exit on"""
+
     stop: bool = True
     quit: bool = True
     env: dict = field(default_factory=dict)
 
 
-async def handle_client(ws, context, stopped_by, received_data):
-    """Receive Rhino lifecycle events and collect data messages."""
-    try:
-        async for message_raw in ws:
+def server(address="127.0.0.1", port=8765, context=None, poll_timeout=0.01):
+    context = RunContext() if context is None else context
+
+    with WebSocketServer(address, port) as websocket:
+        print("Server listening on ws://{}:{}".format(address, port))
+        yield "ready", None
+
+        while True:
+            message = websocket.poll(poll_timeout)
+            if message is None:
+                continue
+
             try:
-                message = json.loads(message_raw)
-            except json.JSONDecodeError:
-                message = None
+                payload = json.loads(message.data)
+            except json.JSONDecodeError as error:
+                raise BadClientMessageException(message.data) from error
+            if not isinstance(payload, dict):
+                raise BadClientMessageException(message.data)
+            if "type" not in payload:
+                raise NoClientMessageTypeException(message.data)
 
-            message_type = message.get("type") if isinstance(message, dict) else None
-
-            if message_type == "terminal":
-                print(message.get("data", ""))
-                await ws.send("received")
+            message_type = payload["type"]
+            if message_type == "env":
+                websocket.send(message, json.dumps(context.env))
+            elif message_type == "terminal":
+                data = payload.get("data", "")
+                websocket.send(message, "received")
+                print(data)
+                yield message_type, data
             elif message_type == "data":
-                received_data.append(message.get("data"))
-                await ws.send("received")
-            elif message_type == "env":
-                await ws.send(json.dumps(context.env))
+                websocket.send(message, "received")
+                yield message_type, payload.get("data")
             elif message_type == "done":
-                await ws.send("received")
-                if context.stop and not stopped_by.done():
-                    stopped_by.set_result(message_type)
-                    return
+                websocket.send(message, "received")
+                if context.stop:
+                    result = message_type, None
+                    yield result
+                    return result
             elif message_type == "quit":
-                await ws.send("received")
-                if context.quit and not stopped_by.done():
-                    stopped_by.set_result(message_type)
-                    return
+                websocket.send(message, "received")
+                if context.quit:
+                    result = message_type, None
+                    yield result
+                    return result
             else:
-                received_data.append(message_raw)
-                await ws.send("received")
-
-    # Forward exceptions to the main loop
-    except BaseException as error:
-        if not stopped_by.done():
-            stopped_by.set_exception(error)
-        raise
-
-
-async def main(address="127.0.0.1", port=8765, context=None, started=None):
-    """Run until a lifecycle event occurs."""
-    if context is None:
-        context = RunContext()
-    stopped_by = asyncio.get_running_loop().create_future()
-    received_data = []
-    try:
-        async with serve(
-            lambda ws: handle_client(ws, context, stopped_by, received_data),
-            address,
-            port,
-            close_timeout=0,
-        ) as server:
-            if started is not None:
-                started.set_result(None)
-            print("Server listening on ws://{}:{}".format(address, port))
-            return await stopped_by, received_data
-    except BaseException as error:
-        if started is not None and not started.done():
-            started.set_exception(error)
-        raise
+                raise UnknownMessageTypeException(message_type)

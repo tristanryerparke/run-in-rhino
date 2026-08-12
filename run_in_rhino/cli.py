@@ -1,5 +1,4 @@
 import argparse
-import asyncio
 import json
 import sys
 
@@ -36,11 +35,9 @@ def rhino_watch(argv=None):
     )
 
     try:
-        asyncio.run(
-            run_rhino_python_til_done(
-                args.script,
-                context=context,
-            )
+        run_rhino_python_til_done(
+            args.script,
+            context=context,
         )
     except Exception as error:
         print("rhino-watch failed: {}".format(error), file=sys.stderr)
