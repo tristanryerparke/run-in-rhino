@@ -1,3 +1,4 @@
+import atexit
 import glob
 import json
 import os
@@ -7,6 +8,16 @@ import tempfile
 
 PIPE_NAME_PREFIX = "rhinocode_remotepipe_"
 SOCKET_NAME_PREFIX = "CoreFxPipe_" + PIPE_NAME_PREFIX
+_TEMP_SCRIPT_PATHS = set()
+
+
+def _remove_temp_scripts():
+    for path in _TEMP_SCRIPT_PATHS:
+        if os.path.exists(path):
+            os.unlink(path)
+
+
+atexit.register(_remove_temp_scripts)
 
 
 def _pipe_roots():
@@ -66,35 +77,33 @@ def run_script(script_path=None, pipe_path=None, *, script=None):
     if (script_path is None) == (script is None):
         raise ValueError("Provide exactly one of script_path or script")
 
-    temp_path = None
-    try:
-        if script is not None:
-            with tempfile.NamedTemporaryFile(
-                "w",
-                suffix=".py",
-                encoding="utf-8",
-                delete=False,
-            ) as file:
-                file.write(script)
-                temp_path = file.name
-            script_path = temp_path
+    if script is not None:
+        with tempfile.NamedTemporaryFile(
+            "w",
+            suffix=".py",
+            encoding="utf-8",
+            delete=False,
+        ) as file:
+            file.write(script)
+            script_path = file.name
+        _TEMP_SCRIPT_PATHS.add(script_path)
 
-        script_path = os.path.abspath(str(script_path))
-        if not os.path.isfile(script_path):
-            raise FileNotFoundError("Script not found: " + script_path)
+    script_path = os.path.abspath(str(script_path))
+    if not os.path.isfile(script_path):
+        raise FileNotFoundError("Script not found: " + script_path)
 
-        payload = {
-            "$meta": {"version": "1.0"},
-            "$type": "script",
-            "location": script_path,
-        }
-        response = _send_request(payload, _resolve_pipe(pipe_path))
-        if response is None:
-            raise RuntimeError("Rhino returned no response")
-        return response
-    finally:
-        if temp_path is not None:
-            os.unlink(temp_path)
+    payload = {
+        "$meta": {"version": "1.0"},
+        "$type": "script",
+        "location": script_path,
+    }
+    resolved_pipe = _resolve_pipe(pipe_path)
+    print("DEBUG run_script sending", script_path, "to", resolved_pipe)
+    response = _send_request(payload, resolved_pipe)
+    print("DEBUG run_script response", response)
+    if response is None:
+        raise RuntimeError("Rhino returned no response")
+    return response
 
 
 def run_command(command, pipe_path=None):
@@ -108,7 +117,10 @@ def run_command(command, pipe_path=None):
         "endpoint": "command",
         "payload": command,
     }
-    response = _send_request(payload, _resolve_pipe(pipe_path))
+    resolved_pipe = _resolve_pipe(pipe_path)
+    print("DEBUG run_command sending", command, "to", resolved_pipe)
+    response = _send_request(payload, resolved_pipe)
+    print("DEBUG run_command response", response)
     if response is None:
         raise RuntimeError("Rhino returned no response")
     return response

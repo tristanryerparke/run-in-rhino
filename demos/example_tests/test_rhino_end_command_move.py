@@ -20,7 +20,6 @@ SETUP_EXTENSION = """import Rhino
 
 debug_to_server("DEBUG setup extension starting", connection=connection)
 
-
 def handler(sender, event):
     command_name = (
         getattr(event, "CommandEnglishName", None)
@@ -56,9 +55,12 @@ connection.send_data(json.dumps({"box_id": str(box_id), "max": box_maximum_point
 debug_to_server("DEBUG setup payload sent", connection=connection)
 """
 
-SETUP_SCRIPT = BOX_SCRIPT_PREFIX + """connection = SocketConnection()
+SETUP_SCRIPT = BOX_SCRIPT_PREFIX + """print("DEBUG Rhino setup script started")
+connection = SocketConnection()
+print("DEBUG Rhino setup script connected to watcher")
 debug_to_server("DEBUG setup script connected", connection=connection)
 environment = install_sticky_environment(connection)
+print("DEBUG Rhino setup script installed sticky environment")
 debug_to_server("DEBUG environment installed value={!r}".format(environment), connection=connection)
 debug_to_server(
     "DEBUG sticky environment value={!r}".format(sc.sticky.get(STICKY_ENVIRONMENT_KEY)),
@@ -94,10 +96,10 @@ def run_flow():
                     setup_payload = payload
                     assert setup_payload["max"] == BOX_MAX
                     print("DEBUG parent sending _SelID")
-                    run_command(f"_SelID {setup_payload['box_id']} _Enter")
+                    run_command("_SelID {} _Enter".format(setup_payload["box_id"]))
                     time.sleep(0.1)
                     print("DEBUG parent sending _Move")
-                    run_command(f"_Move 0,0,0 {MOVE_X},0,0")
+                    run_command("_Move 0,0,0 {},0,0".format(MOVE_X))
                 elif payload.get("command") == "Move":
                     final_payload = payload
     finally:

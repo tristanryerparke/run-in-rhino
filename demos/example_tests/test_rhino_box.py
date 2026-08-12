@@ -3,23 +3,18 @@ to and recieve data from a script that gets run in rhino,
 and use it to run a real test"""
 
 import json
-from pathlib import Path
 
 from run_in_rhino.orchestration import run_rhino_python_til_done
 from run_in_rhino.server import RunContext
 
 
 BOX_MAX = [5, 5, 5]
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 
-BOX_SCRIPT_PREFIX = f"""import json
-import sys
+BOX_SCRIPT_PREFIX = """import json
 
 import Rhino
 import scriptcontext as sc
-
-sys.path.insert(0, {str(PROJECT_ROOT)!r})
 
 from run_in_rhino.rhino_env.client import SocketConnection, debug_to_server
 from run_in_rhino.rhino_env.env import STICKY_ENVIRONMENT_KEY, install_sticky_environment
@@ -40,8 +35,11 @@ def box_maximum_point(box_id):
 """
 
 
-SCRIPT = BOX_SCRIPT_PREFIX + """connection = SocketConnection()
+SCRIPT = BOX_SCRIPT_PREFIX + """print("DEBUG Rhino box script started")
+connection = SocketConnection()
+print("DEBUG Rhino box script connected to watcher")
 install_sticky_environment(connection)
+print("DEBUG Rhino box script installed sticky environment")
 
 with OutputParasite(connection, done_msg=True):
     x, y, z = sc.sticky[STICKY_ENVIRONMENT_KEY]["box_dims"]
