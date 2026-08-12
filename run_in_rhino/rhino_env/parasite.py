@@ -2,6 +2,7 @@
 # To be run in rhino
 
 import sys
+import traceback
 from contextlib import redirect_stderr, redirect_stdout
 from io import StringIO
 
@@ -52,9 +53,22 @@ class OutputParasite:
         self.output.truncate(0)
         return result
 
-    def __exit__(self, exc_type, exc_value, traceback):
-        self._stderr.__exit__(exc_type, exc_value, traceback)
-        self._stdout.__exit__(exc_type, exc_value, traceback)
+    def __exit__(self, exc_type, exc_value, traceback_value):
+        self._stderr.__exit__(exc_type, exc_value, traceback_value)
+        self._stdout.__exit__(exc_type, exc_value, traceback_value)
+
+        if exc_type is not None:
+            error_output = "".join(
+                traceback.format_exception(exc_type, exc_value, traceback_value)
+            )
+            self.output.write(error_output)
+            print(error_output, end="", file=sys.stderr)
+            self.flush()
+            if self.connection is not None:
+                self.connection.send_quit()
+                return True
+            return False
+
         self.flush()
         if self.done_msg and self.connection is not None:
             self.connection.send_done()
