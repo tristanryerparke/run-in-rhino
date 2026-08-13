@@ -6,6 +6,9 @@ dist/
 wheels/
 *.egg-info
 
+# Rhino lock files
+*.rhl
+
 # Virtual environments
 .venv
 

@@ -52,10 +52,11 @@ with OutputParasite(connection, done_msg=True):
 """
 
 
-def test_rhino_box_reports_original_maximum_point():
+def test_rhino_box_reports_original_maximum_point(rhino_instance):
     reason, data = run_rhino_python_til_done(
         script=SCRIPT,
         context=RunContext(env={"box_dims": BOX_MAX}),
+        pipe_path=rhino_instance.pipe_path,
     )
 
     assert reason == "done"

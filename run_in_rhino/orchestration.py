@@ -6,12 +6,12 @@ from .server import server
 from .utils import command_script
 
 
-def start_rhino_command(command):
+def start_rhino_command(command, pipe_path=None):
     """Submit a Rhino command and return without waiting for it to finish."""
-    return run_script(script=command_script(command))
+    return run_script(script=command_script(command), pipe_path=pipe_path)
 
 
-def run_rhino_command(command, callback=None):
+def run_rhino_command(command, callback=None, pipe_path=None):
     """Run a Rhino command and return its callback payload."""
     if callback is None:
         callback = str(uuid.uuid4())
@@ -30,7 +30,8 @@ def run_rhino_command(command, callback=None):
                     command,
                     callback=callback,
                     done=True,
-                )
+                ),
+                pipe_path=pipe_path,
             )
         elif status == "data":
             payload = json.loads(data)
@@ -51,7 +52,13 @@ def run_rhino_command(command, callback=None):
     return result
 
 
-def run_rhino_python_til_done(script_path=None, context=None, *, script=None):
+def run_rhino_python_til_done(
+    script_path=None,
+    context=None,
+    pipe_path=None,
+    *,
+    script=None,
+):
     """Start the server, run a Rhino script, and wait for the server to exit."""
     if (script_path is None) == (script is None):
         raise ValueError("Provide exactly one of script_path or script")
@@ -59,7 +66,7 @@ def run_rhino_python_til_done(script_path=None, context=None, *, script=None):
     received_data = []
     for status, data in server(context=context):
         if status == "ready":
-            run_script(script_path, script=script)
+            run_script(script_path, pipe_path=pipe_path, script=script)
         elif status == "data":
             received_data.append(data)
     return status, received_data

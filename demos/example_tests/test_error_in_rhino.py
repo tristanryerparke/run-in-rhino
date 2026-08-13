@@ -19,12 +19,12 @@ with OutputParasite(connection):
 """
 
 
-def test_rhino_error_forwards_traceback_and_quits():
+def test_rhino_error_forwards_traceback_and_quits(rhino_instance):
     terminal_output = []
 
     for status, data in server():
         if status == "ready":
-            run_script(script=SCRIPT)
+            run_script(script=SCRIPT, pipe_path=rhino_instance.pipe_path)
         elif status == "terminal":
             terminal_output.append(data)
 

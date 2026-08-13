@@ -81,7 +81,7 @@ debug_to_server(
 """ + SETUP_EXTENSION
 
 
-def run_flow():
+def run_flow(rhino_instance):
     move_callback = str(uuid.uuid4())
     events = server(context=RunContext(env={"box_dims": BOX_MAX}))
     setup_payload = None
@@ -92,7 +92,10 @@ def run_flow():
         for status, data in events:
             if status == "ready":
                 print("DEBUG parent sending setup script after server started")
-                run_script(script=setup_script(move_callback))
+                run_script(
+                    script=setup_script(move_callback),
+                    pipe_path=rhino_instance.pipe_path,
+                )
                 continue
 
             print("DEBUG parent saw event", (status, data))
@@ -107,13 +110,17 @@ def run_flow():
                         script=command_script(
                             "_SelID {} _Enter".format(setup_payload["box_id"]),
                             callback="selection_done",
-                        )
+                        ),
+                        pipe_path=rhino_instance.pipe_path,
                     )
                 elif callback == "selection_done":
                     assert payload["succeeded"] is True
                     finished_commands.append(callback)
                     print("DEBUG parent starting _Move")
-                    start_rhino_command("_Move 0,0,0 {},0,0".format(MOVE_X))
+                    start_rhino_command(
+                        "_Move 0,0,0 {},0,0".format(MOVE_X),
+                        pipe_path=rhino_instance.pipe_path,
+                    )
                 elif callback == move_callback:
                     final_payload = payload
     finally:
@@ -127,5 +134,5 @@ def run_flow():
     assert final_payload["max"] == [BOX_MAX[0] + MOVE_X, BOX_MAX[1], BOX_MAX[2]]
 
 
-def test_rhino_end_command_handler_tracks_move_with_one_server():
-    run_flow()
+def test_rhino_end_command_handler_tracks_move_with_one_server(rhino_instance):
+    run_flow(rhino_instance)
