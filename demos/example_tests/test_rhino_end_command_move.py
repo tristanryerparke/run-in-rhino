@@ -2,6 +2,7 @@
 
 import json
 import sys
+import uuid
 from pathlib import Path
 
 THIS_DIR = Path(__file__).resolve().parent
@@ -9,6 +10,7 @@ if str(THIS_DIR) not in sys.path:
     sys.path.insert(0, str(THIS_DIR))
 
 from test_rhino_box import BOX_MAX, BOX_SCRIPT_PREFIX
+from run_in_rhino.orchestration import start_rhino_command
 from run_in_rhino.pipe import run_script
 from run_in_rhino.server import RunContext, server
 from run_in_rhino.utils import command_script
@@ -40,12 +42,14 @@ def handler(sender, event):
         )
         callback_connection.send_data(
             json.dumps({
+                "callback": move_callback,
                 "box_id": str(box_id),
                 "max": box_maximum_point(box_id),
                 "command": command_name,
             })
         )
         sc.doc.Objects.Delete(box_id, True)
+    callback_connection.send_done()
 
 
 Rhino.Commands.Command.EndCommand += handler
@@ -54,7 +58,8 @@ connection.send_data(json.dumps({"box_id": str(box_id), "max": box_maximum_point
 debug_to_server("DEBUG setup payload sent", connection=connection)
 """
 
-SETUP_SCRIPT = BOX_SCRIPT_PREFIX + """print("DEBUG Rhino setup script started")
+def setup_script(move_callback):
+    return BOX_SCRIPT_PREFIX + f"move_callback = {move_callback!r}\n" + """print("DEBUG Rhino setup script started")
 connection = SocketConnection()
 print("DEBUG Rhino setup script connected to watcher")
 debug_to_server("DEBUG setup script connected", connection=connection)
@@ -77,6 +82,7 @@ debug_to_server(
 
 
 def run_flow():
+    move_callback = str(uuid.uuid4())
     events = server(context=RunContext(env={"box_dims": BOX_MAX}))
     setup_payload = None
     final_payload = None
@@ -86,7 +92,7 @@ def run_flow():
         for status, data in events:
             if status == "ready":
                 print("DEBUG parent sending setup script after server started")
-                run_script(script=SETUP_SCRIPT)
+                run_script(script=setup_script(move_callback))
                 continue
 
             print("DEBUG parent saw event", (status, data))
@@ -106,25 +112,17 @@ def run_flow():
                 elif callback == "selection_done":
                     assert payload["succeeded"] is True
                     finished_commands.append(callback)
-                    print("DEBUG parent sending _Move script")
-                    run_script(
-                        script=command_script(
-                            "_Move 0,0,0 {},0,0".format(MOVE_X),
-                            callback="move_done",
-                            done=True,
-                        )
-                    )
-                elif callback == "move_done":
-                    assert payload["succeeded"] is True
-                    finished_commands.append(callback)
-                elif payload.get("command") == "Move":
+                    print("DEBUG parent starting _Move")
+                    start_rhino_command("_Move 0,0,0 {},0,0".format(MOVE_X))
+                elif callback == move_callback:
                     final_payload = payload
     finally:
         events.close()
 
     assert setup_payload is not None
     assert final_payload is not None
-    assert finished_commands == ["selection_done", "move_done"]
+    assert finished_commands == ["selection_done"]
+    assert final_payload["callback"] == move_callback
     assert final_payload["box_id"] == setup_payload["box_id"]
     assert final_payload["max"] == [BOX_MAX[0] + MOVE_X, BOX_MAX[1], BOX_MAX[2]]
 

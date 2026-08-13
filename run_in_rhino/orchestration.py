@@ -6,6 +6,11 @@ from .server import server
 from .utils import command_script
 
 
+def start_rhino_command(command):
+    """Submit a Rhino command and return without waiting for it to finish."""
+    return run_script(script=command_script(command))
+
+
 def run_rhino_command(command, callback=None):
     """Run a Rhino command and return its callback payload."""
     if callback is None:

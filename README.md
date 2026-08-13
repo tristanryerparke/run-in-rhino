@@ -78,6 +78,18 @@ result = run_rhino_command(
 assert result["callback"] == "circle_done"
 ```
 
+To submit a command without waiting for it to finish, use `start_rhino_command()`:
+
+```python
+from run_in_rhino.orchestration import start_rhino_command
+
+response = start_rhino_command("_Circle 0,0,0 5")
+job_id = response["jobId"]
+# The command may still be running in Rhino here.
+```
+
+`start_rhino_command()` does not start a WebSocket server or create a callback; it returns after RhinoCode acknowledges the submitted script.
+
 For multi-step flows on one server, `command_script()` provides the lower-level interface. It creates Python source that calls `rhinoscriptsyntax.Command()` inside Rhino. Pass that source to `run_script()` and handle its callback data:
 
 ```python

@@ -1,5 +1,14 @@
-def command_script(command, callback, done=False):
-    """Create a Rhino Python script that runs a command and reports completion."""
+def command_script(command, callback=None, done=False):
+    """Create a Rhino Python script that runs a command, optionally reporting completion."""
+    if callback is None:
+        if done:
+            raise ValueError("done requires a callback")
+        return f"""import rhinoscriptsyntax as rs
+
+
+rs.Command({command!r}, echo=False)
+"""
+
     return f"""import json
 
 import rhinoscriptsyntax as rs
