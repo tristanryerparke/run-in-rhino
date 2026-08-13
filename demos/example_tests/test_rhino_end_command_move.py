@@ -2,7 +2,6 @@
 
 import json
 import sys
-import time
 from pathlib import Path
 
 THIS_DIR = Path(__file__).resolve().parent
@@ -10,8 +9,9 @@ if str(THIS_DIR) not in sys.path:
     sys.path.insert(0, str(THIS_DIR))
 
 from test_rhino_box import BOX_MAX, BOX_SCRIPT_PREFIX
-from run_in_rhino.pipe import run_command, run_script
+from run_in_rhino.pipe import run_script
 from run_in_rhino.server import RunContext, server
+from run_in_rhino.utils import command_script
 
 
 MOVE_X = 5
@@ -46,7 +46,6 @@ def handler(sender, event):
             })
         )
         sc.doc.Objects.Delete(box_id, True)
-    callback_connection.send_done()
 
 
 Rhino.Commands.Command.EndCommand += handler
@@ -81,6 +80,7 @@ def run_flow():
     events = server(context=RunContext(env={"box_dims": BOX_MAX}))
     setup_payload = None
     final_payload = None
+    finished_commands = []
 
     try:
         for status, data in events:
@@ -92,14 +92,31 @@ def run_flow():
             print("DEBUG parent saw event", (status, data))
             if status == "data":
                 payload = json.loads(data)
+                callback = payload.get("callback")
                 if setup_payload is None:
                     setup_payload = payload
                     assert setup_payload["max"] == BOX_MAX
-                    print("DEBUG parent sending _SelID")
-                    run_command("_SelID {} _Enter".format(setup_payload["box_id"]))
-                    time.sleep(0.1)
-                    print("DEBUG parent sending _Move")
-                    run_command("_Move 0,0,0 {},0,0".format(MOVE_X))
+                    print("DEBUG parent sending _SelID script")
+                    run_script(
+                        script=command_script(
+                            "_SelID {} _Enter".format(setup_payload["box_id"]),
+                            callback="selection_done",
+                        )
+                    )
+                elif callback == "selection_done":
+                    assert payload["succeeded"] is True
+                    finished_commands.append(callback)
+                    print("DEBUG parent sending _Move script")
+                    run_script(
+                        script=command_script(
+                            "_Move 0,0,0 {},0,0".format(MOVE_X),
+                            callback="move_done",
+                            done=True,
+                        )
+                    )
+                elif callback == "move_done":
+                    assert payload["succeeded"] is True
+                    finished_commands.append(callback)
                 elif payload.get("command") == "Move":
                     final_payload = payload
     finally:
@@ -107,6 +124,7 @@ def run_flow():
 
     assert setup_payload is not None
     assert final_payload is not None
+    assert finished_commands == ["selection_done", "move_done"]
     assert final_payload["box_id"] == setup_payload["box_id"]
     assert final_payload["max"] == [BOX_MAX[0] + MOVE_X, BOX_MAX[1], BOX_MAX[2]]
 

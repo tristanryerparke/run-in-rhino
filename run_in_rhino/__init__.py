@@ -1,13 +1,12 @@
 __all__ = [
     "RunContext",
-    "run_command",
     "run_rhino_python_til_done",
     "run_script",
 ]
 
 
 def __getattr__(name):
-    if name in {"run_command", "run_script"}:
+    if name == "run_script":
         from . import pipe
 
         return getattr(pipe, name)

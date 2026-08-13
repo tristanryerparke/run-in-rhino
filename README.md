@@ -57,8 +57,55 @@ connection.send_done()
 Both of these helpers are meant to run without a connection, so you aren't forced to set it up if it can't be imported, or is turned off, etc.
 
 
+## Run a Rhino command
+
+`run_rhino_command()` starts a server, runs the command, waits for its callback, and returns the callback payload:
+
+```python
+from run_in_rhino.orchestration import run_rhino_command
+
+result = run_rhino_command("_Circle 0,0,0 5")
+assert result["succeeded"] is True
+```
+
+The callback defaults to a generated UUID. Specify it when you need a predictable value:
+
+```python
+result = run_rhino_command(
+    "_Circle 0,0,0 5",
+    callback="circle_done",
+)
+assert result["callback"] == "circle_done"
+```
+
+For multi-step flows on one server, `command_script()` provides the lower-level interface. It creates Python source that calls `rhinoscriptsyntax.Command()` inside Rhino. Pass that source to `run_script()` and handle its callback data:
+
+```python
+import json
+
+from run_in_rhino.pipe import run_script
+from run_in_rhino.server import server
+from run_in_rhino.utils import command_script
+
+for status, data in server():
+    if status == "ready":
+        run_script(
+            script=command_script(
+                "_Circle 0,0,0 5",
+                callback="circle_done",
+                done=True,
+            )
+        )
+    elif status == "data":
+        result = json.loads(data)
+        if result.get("callback") == "circle_done":
+            assert result["succeeded"] is True
+```
+
+The generated script sends the callback after `rhinoscriptsyntax.Command()` returns. With `done=True`, it then sends `done` so the default server exits. The callback data also contains the original `command` and its boolean `succeeded` result.
+
 ## Lifecycle and output
 
-For longer interactions, iterate `server(...)` directly. On its `"ready"` event, use `run_script(script=...)`; later use `run_command(...)` to drive Rhino commands while handling returned `"data"` and `"terminal"` events.
+For longer interactions, iterate `server(...)` directly. On its `"ready"` event, use `run_script(script=...)`; handle returned `"data"` and `"terminal"` events to sequence later scripts or commands.
 
 See `demos/example_tests/`: `test_rhino_box.py` exchanges test data, `test_rhino_end_command_move.py` drives `_SelID` and `_Move`, and `test_error_in_rhino.py` verifies error forwarding.

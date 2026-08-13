@@ -105,23 +105,3 @@ def run_script(script_path=None, pipe_path=None, *, script=None):
         raise RuntimeError("Rhino returned no response")
     return response
 
-
-def run_command(command, pipe_path=None):
-    """Runs a rhino command in rhino via the rhinocode pipe"""
-    if not isinstance(command, str) or not command:
-        raise ValueError("command must be a non-empty string")
-
-    payload = {
-        "$meta": {"version": "1.0"},
-        "$type": "job",
-        "endpoint": "command",
-        "payload": command,
-    }
-    resolved_pipe = _resolve_pipe(pipe_path)
-    print("DEBUG run_command sending", command, "to", resolved_pipe)
-    response = _send_request(payload, resolved_pipe)
-    print("DEBUG run_command response", response)
-    if response is None:
-        raise RuntimeError("Rhino returned no response")
-    return response
-

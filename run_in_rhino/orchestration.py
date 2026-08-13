@@ -1,5 +1,49 @@
+import json
+import uuid
+
 from .pipe import run_script
 from .server import server
+from .utils import command_script
+
+
+def run_rhino_command(command, callback=None):
+    """Run a Rhino command and return its callback payload."""
+    if callback is None:
+        callback = str(uuid.uuid4())
+    elif not isinstance(callback, str) or not callback:
+        raise ValueError("callback must be a non-empty string")
+
+    result = None
+    terminal_output = []
+    final_status = None
+
+    for status, data in server():
+        final_status = status
+        if status == "ready":
+            run_script(
+                script=command_script(
+                    command,
+                    callback=callback,
+                    done=True,
+                )
+            )
+        elif status == "data":
+            payload = json.loads(data)
+            if payload.get("callback") == callback:
+                result = payload
+        elif status == "terminal":
+            terminal_output.append(data)
+
+    if result is None:
+        message = "Rhino exited with {!r} before command callback {!r}".format(
+            final_status,
+            callback,
+        )
+        if terminal_output:
+            message += "\n" + "".join(terminal_output)
+        raise RuntimeError(message)
+
+    return result
 
 
 def run_rhino_python_til_done(script_path=None, context=None, *, script=None):
