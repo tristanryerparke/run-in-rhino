@@ -1,5 +1,6 @@
 import json
 import secrets
+import shutil
 import socket
 import subprocess
 import tempfile
@@ -13,6 +14,13 @@ from run_in_rhino.pipe import list_pipes, run_script
 DEFAULT_RHINO_EXECUTABLE = Path(
     "/Applications/Rhino 8.app/Contents/MacOS/Rhinoceros"
 )
+_SAVE_SCRIPT = """import rhinoscriptsyntax as rs
+if not rs.Command("_Save", echo=False):
+    raise RuntimeError("Rhino failed to save the disposable test document")
+"""
+_EXIT_SCRIPT = """import Rhino
+Rhino.RhinoApp.Exit(False)
+"""
 
 
 @dataclass
@@ -21,6 +29,7 @@ class RhinoInstance:
     pipe_path: str
     document_path: Path
     startup_payload: dict
+    _temporary_directory: tempfile.TemporaryDirectory | None = None
 
     def run_script(self, script_path=None, *, script=None):
         """Run a script through this instance's PID-owned RhinoCode pipe."""
@@ -31,26 +40,36 @@ class RhinoInstance:
         )
 
     def stop(self, timeout=10):
-        """Ask this Rhino to exit cleanly, with signals as a final fallback."""
-        if self.process.poll() is not None:
-            return
+        """Save disposable state, then ask Rhino to exit cleanly."""
+        if self.process.poll() is None:
+            time.sleep(1)
+            try:
+                if self._temporary_directory is not None:
+                    run_script(
+                        script=_SAVE_SCRIPT,
+                        pipe_path=self.pipe_path,
+                    )
+                    time.sleep(0.25)
+                run_script(
+                    script=_EXIT_SCRIPT,
+                    pipe_path=self.pipe_path,
+                )
+            except (ConnectionError, OSError, RuntimeError):
+                pass
 
-        try:
-            run_script(
-                script="import Rhino\nRhino.RhinoApp.Exit(False)\n",
-                pipe_path=self.pipe_path,
-            )
-            self.process.wait(timeout=timeout)
-            return
-        except (ConnectionError, OSError, RuntimeError, subprocess.TimeoutExpired):
-            pass
+            try:
+                self.process.wait(timeout=timeout)
+            except subprocess.TimeoutExpired:
+                self.process.terminate()
+                try:
+                    self.process.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    self.process.kill()
+                    self.process.wait(timeout=5)
 
-        self.process.terminate()
-        try:
-            self.process.wait(timeout=5)
-        except subprocess.TimeoutExpired:
-            self.process.kill()
-            self.process.wait(timeout=5)
+        if self._temporary_directory is not None:
+            self._temporary_directory.cleanup()
+            self._temporary_directory = None
 
     def __enter__(self):
         return self
@@ -182,12 +201,16 @@ def _stop_failed_launch(process, pipe_path):
     if pipe_path is not None:
         try:
             run_script(
-                script="import Rhino\nRhino.RhinoApp.Exit(False)\n",
+                script=_EXIT_SCRIPT,
                 pipe_path=pipe_path,
             )
+        except (ConnectionError, OSError, RuntimeError):
+            pass
+
+        try:
             process.wait(timeout=10)
             return
-        except (ConnectionError, OSError, RuntimeError, subprocess.TimeoutExpired):
+        except subprocess.TimeoutExpired:
             pass
 
     process.terminate()
@@ -263,20 +286,34 @@ def launch_rhino(
     *,
     executable=DEFAULT_RHINO_EXECUTABLE,
     startup_timeout=60,
+    disposable=False,
 ):
     """Launch Rhino and wait for its startup Python callback and PID-owned pipe."""
     executable = Path(executable).expanduser().resolve()
-    document_path = Path(document_path).expanduser().resolve()
+    source_document_path = Path(document_path).expanduser().resolve()
     if not executable.is_file():
         raise FileNotFoundError("Rhino executable not found: {}".format(executable))
-    if not document_path.is_file():
-        raise FileNotFoundError("Rhino document not found: {}".format(document_path))
+    if not source_document_path.is_file():
+        raise FileNotFoundError(
+            "Rhino document not found: {}".format(source_document_path)
+        )
 
     running_processes = _find_running_processes(executable)
     if running_processes:
         raise RuntimeError(
             _running_process_message(executable, running_processes)
         )
+
+    temporary_directory = None
+    document_path = source_document_path
+    if disposable:
+        temporary_directory = tempfile.TemporaryDirectory(
+            prefix="run-in-rhino-document-"
+        )
+        document_path = (
+            Path(temporary_directory.name) / source_document_path.name
+        ).resolve()
+        shutil.copy2(source_document_path, document_path)
 
     token = secrets.token_urlsafe(32)
     callback_path = None
@@ -321,7 +358,7 @@ def launch_rhino(
             callback_document = payload.get("document_path")
             if not callback_document:
                 raise RuntimeError("Rhino startup callback had no active document")
-            if Path(callback_document).resolve() != document_path:
+            if Path(callback_document).resolve() != document_path.resolve():
                 raise RuntimeError(
                     "Rhino opened {!r}, expected {!r}".format(
                         callback_document,
@@ -334,10 +371,13 @@ def launch_rhino(
                 pipe_path=pipe_path,
                 document_path=document_path,
                 startup_payload=payload,
+                _temporary_directory=temporary_directory,
             )
         except Exception:
             if process is not None:
                 _stop_failed_launch(process, pipe_path)
+            if temporary_directory is not None:
+                temporary_directory.cleanup()
             raise
         finally:
             if callback_path is not None:
