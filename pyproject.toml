@@ -4,14 +4,24 @@ version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.13"
-dependencies = []
+dependencies = [
+    "pydantic>=2.13.4",
+    "pytest>=9.1.1",
+    "websocket-client>=1.9.0",
+    "wsproto>=1.3.2",
+]
 
 [project.scripts]
-in-rhino = "in_rhino:main"
-rhino-watch = "server:main"
+in-rhino = "run_in_rhino.cli:in_rhino"
+rhino-watch = "run_in_rhino.cli:rhino_watch"
 
 [tool.uv]
 package = true
 
-[tool.setuptools]
-py-modules = ["in_rhino", "server", "pipe", "rhino_watcher", "client", "rhino_environment", "run_in_rhino"]
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["run_in_rhino*"]
+namespaces = false

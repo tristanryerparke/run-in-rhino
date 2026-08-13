@@ -1,85 +1,123 @@
-# Rhino environment bootstrap
+# run-in-rhino
 
-`run-in-rhino` can provide environment variables to Python code running inside an
-already-open Rhino process. This is useful because Rhino is not a child process
-of the watcher, so changing the parent process environment would not otherwise
-reach Rhino.
+Programatically run python scripts inside an already-open Rhino instance, and optionally exchange messages over a local WebSocket. It is especially useful for tests, interactive development, and analysis of rhino's state.
+The parent script can easily poll what's running in rhino and perform other tasks using the provided generator function.
 
-## Use from parent Python
+## CLI
 
-Pass an `environment` mapping when starting the controllable watcher:
+Run a watched script with `uv run rhino-watch path/to/script.py`; add `--nostop` to keep the watcher open after `done`. Run a script without a watcher using `uv run in-rhino path/to/script.py`.
+
+## Setup
+
+Install this project with `uv sync`. In Rhino 8, add the checkout directory to **ScriptEditor → Options → Python 3 → Paths**:
+
+```text
+/Users/tristanryerparke/projects-local/run-in-rhino
+```
+
+Rhino then adds the directory to the pipe script server's `sys.path`, allowing Rhino scripts to import `run_in_rhino`.
+
+## Run a Rhino script and receive data
+
+The parent starts the watcher and sends Python source to Rhino:
 
 ```python
-from run_in_rhino import start_server
+from run_in_rhino.orchestration import run_rhino_python_til_done
+from run_in_rhino.server import RunContext
 
-with start_server(
-    nostop=True,
-    environment={
-        "TACK_DEBUG": "1",
-        "TACK_MODE": "preview",
-    },
-) as rhino:
-    rhino.run_file("commands/setup_tack.py")
+reason, data = run_rhino_python_til_done(
+    script=SCRIPT,
+    context=RunContext(env={"box_dims": [5, 5, 5]}),
+)
+assert reason == "done"
 ```
 
-Environment names and values must both be strings. An empty mapping is treated
-as no environment.
-
-### Execute a top-level Rhino command
-
-Use `run_command()` when the operation must create its own Rhino command and undo record rather than run inside a Python script command:
+Inside Rhino, create a `SocketConnection`. `install_sticky_environment()` requests the parent's `env` mapping and stores it in `scriptcontext.sticky`. `send_data()` sends a value back to the parent; the returned `data` list contains those values.
 
 ```python
-with start_server(nostop=True, environment={"debug": "true"}) as rhino:
-    rhino.run_file("tests/rhino/prepare_move.py")
-    rhino.run_command("_Move 0,0,0 0,10,0")
-    rhino.run_file("tests/rhino/collect_move.py")
+connection = SocketConnection()
+environment = install_sticky_environment(connection)
+connection.send_data(json.dumps(environment["box_dims"]))
+connection.send_done()
 ```
 
-### Command-line debug flag
+## Basic Client Socket Methods
 
-Run a watched script with `debug=true` in its Rhino environment:
+- `send_terminal(string)` forwards terminal output to the parent watcher.
+- `send_data(string)` sends textual data to the parent watcher.
+- `send_done()` ends the watcher when `RunContext.stop` is true (the default).
+- `send_quit()` ends it when `RunContext.quit` is true (the default).
 
-```bash
-uv run rhino-watch commands/setup_tack.py --debug
-```
+## Sender Helpers
 
-The CLI explicitly installs `debug=false` when `--debug` is absent. Rhino is a persistent process, so this clears a `debug=true` value left by an earlier debug watcher.
+`debug_to_server(data, connection)` prints locally and forwards a representation as terminal output. Pass `send_only=True` to forward without printing locally.
 
-## Use inside Rhino
+- `OutputParasite(connection, done_msg=True)` forwards captured `print()` output and sends `done`. If code in the context raises, it forwards the traceback and sends `quit`.
 
-The values are available before the first target script executes:
+Both of these helpers are meant to run without a connection, so you aren't forced to set it up if it can't be imported, or is turned off, etc.
+
+
+## Run a Rhino command
+
+`run_rhino_command()` starts a server, runs the command, waits for its callback, and returns the callback payload:
 
 ```python
-import os
+from run_in_rhino.orchestration import run_rhino_command
 
-if os.getenv("debug") == "true":
-    print("Debug mode is enabled")
+result = run_rhino_command("_Circle 0,0,0 5")
+assert result["succeeded"] is True
 ```
 
-The complete mapping is also retained for the Rhino session in
-`scriptcontext.sticky`:
+The callback defaults to a generated UUID. Specify it when you need a predictable value:
 
 ```python
-import scriptcontext as sc
-
-environment = sc.sticky["run_in_rhino.environment"]
+result = run_rhino_command(
+    "_Circle 0,0,0 5",
+    callback="circle_done",
+)
+assert result["callback"] == "circle_done"
 ```
 
-## How it works
+To submit a command without waiting for it to finish, use `start_rhino_command()`:
 
-When `environment` is configured, `run-in-rhino` runs a small Rhino bootstrap
-script before the first target script. The bootstrap opens the existing local
-WebSocket connection. The watcher includes the environment as base64 JSON in
-the WebSocket upgrade response, and the bootstrap applies it with
-`os.environ.update()`.
+```python
+from run_in_rhino.orchestration import start_rhino_command
 
-## No-environment behavior
+response = start_rhino_command("_Circle 0,0,0 5")
+job_id = response["jobId"]
+# The command may still be running in Rhino here.
+```
 
-With the default `environment=None`, or with `environment={}`:
+`start_rhino_command()` does not start a WebSocket server or create a callback; it returns after RhinoCode acknowledges the submitted script.
 
-- no environment header is sent;
-- no environment WebSocket connection is opened; and
-- no extra Rhino bootstrap script runs.
+For multi-step flows on one server, `command_script()` provides the lower-level interface. It creates Python source that calls `rhinoscriptsyntax.Command()` inside Rhino. Pass that source to `run_script()` and handle its callback data:
 
-The normal watcher path is otherwise unchanged.
+```python
+import json
+
+from run_in_rhino.pipe import run_script
+from run_in_rhino.server import server
+from run_in_rhino.utils import command_script
+
+for status, data in server():
+    if status == "ready":
+        run_script(
+            script=command_script(
+                "_Circle 0,0,0 5",
+                callback="circle_done",
+                done=True,
+            )
+        )
+    elif status == "data":
+        result = json.loads(data)
+        if result.get("callback") == "circle_done":
+            assert result["succeeded"] is True
+```
+
+The generated script sends the callback after `rhinoscriptsyntax.Command()` returns. With `done=True`, it then sends `done` so the default server exits. The callback data also contains the original `command` and its boolean `succeeded` result.
+
+## Lifecycle and output
+
+For longer interactions, iterate `server(...)` directly. On its `"ready"` event, use `run_script(script=...)`; handle returned `"data"` and `"terminal"` events to sequence later scripts or commands.
+
+See `demos/example_tests/`: `test_rhino_box.py` exchanges test data, `test_rhino_end_command_move.py` drives `_SelID` and `_Move`, and `test_error_in_rhino.py` verifies error forwarding.
