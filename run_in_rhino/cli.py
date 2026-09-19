@@ -2,6 +2,7 @@ import argparse
 import json
 import sys
 
+from .logwatch import log_session
 from .orchestration import run_rhino_python_til_done
 from .pipe import run_script
 from .server import RunContext
@@ -43,6 +44,42 @@ def rhino_watch(argv=None):
         print("rhino-watch failed: {}".format(error), file=sys.stderr)
         return 1
     return 0
+
+
+def rhino_log(argv=None):
+    parser = argparse.ArgumentParser(
+        description="Run a script inside Rhino and stream its JSONL log output"
+    )
+    parser.add_argument("script", help="Rhino Python script path")
+    parser.add_argument(
+        "--nostop",
+        action="store_true",
+        help="Keep watching after a done message; scripts with subscribed "
+        "handlers can keep logging. Stop with Ctrl+C.",
+    )
+    parser.add_argument(
+        "--pipe-path",
+        help="path to the RhinoCode pipe; uses the first available pipe by default",
+    )
+    args = parser.parse_args(argv)
+
+    try:
+        for status, data in log_session(
+            args.script,
+            pipe_path=args.pipe_path,
+            stop=not args.nostop,
+        ):
+            if status == "terminal" and data is not None:
+                print(data, end="" if data.endswith("\n") else "\n")
+            elif status == "data" and data is not None:
+                print(data)
+        return 0
+    except KeyboardInterrupt:
+        print("rhino-log stopped")
+        return 130
+    except Exception as error:
+        print("rhino-log failed: {}".format(error), file=sys.stderr)
+        return 1
 
 
 def in_rhino(argv=None):

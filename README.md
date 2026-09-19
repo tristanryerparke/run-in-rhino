@@ -5,7 +5,7 @@ The parent script can easily poll what's running in rhino and perform other task
 
 ## CLI
 
-Run a watched script with `uv run rhino-watch path/to/script.py`; add `--nostop` to keep the watcher open after `done`. Run a script without a watcher using `uv run in-rhino path/to/script.py`.
+Run a watched script with `uv run rhino-watch path/to/script.py`; add `--nostop` to keep the watcher open after `done`. Run a script without a watcher using `uv run in-rhino path/to/script.py`. Stream JSONL logs with `uv run rhino-log path/to/script.py`.
 
 ## Setup
 
@@ -16,6 +16,36 @@ Install this project with `uv sync`. In Rhino 8, add the checkout directory to *
 ```
 
 Rhino then adds the directory to the pipe script server's `sys.path`, allowing Rhino scripts to import `run_in_rhino`.
+
+## JSONL log streaming (rhino-log)
+
+`rhino-log` replaces the websocket with a temp `.jsonl` file: it creates the file, injects its path into the submitted script as `RUN_IN_RHINO_LOG`, and tails the file, printing new log lines in the parent terminal until the script sends `done`.
+
+```bash
+uv run rhino-log demos/jsonl_logging/log_box_demo.py
+```
+
+Inside Rhino, build the logger from the injected global. The `with` block sends `done` automatically; an exception sends the traceback plus `quit`:
+
+```python
+from run_in_rhino.rhino_env.jsonl_logger import JsonlLogger
+
+logger = JsonlLogger(globals().get("RUN_IN_RHINO_LOG"))
+with logger:
+    logger.log("adding a box")
+    logger.log({"object_count": 1}, type="data")
+```
+
+`logger.log(data)` writes `{"type": "terminal", "data": ...}` and prints locally; pass `type="data"` for structured values. Pass `echo=False` to only write to the file.
+
+Running the same script manually in Rhino's editor works unchanged: `RUN_IN_RHINO_LOG` is undefined, so `globals().get(...)` returns `None` and every logger call just prints locally without logging or erroring.
+
+For scripts that subscribe handlers and keep logging after they finish, pass `--nostop`; the `done` message is then ignored and the watcher keeps streaming (see `demos/jsonl_logging/log_idle_demo.py`). Stop it with Ctrl+C:
+
+```bash
+uv run rhino-log demos/jsonl_logging/log_idle_demo.py --nostop
+```
+
 
 ## Run a Rhino script and receive data
 

@@ -14,6 +14,7 @@ dependencies = [
 [project.scripts]
 in-rhino = "run_in_rhino.cli:in_rhino"
 rhino-watch = "run_in_rhino.cli:rhino_watch"
+rhino-log = "run_in_rhino.cli:rhino_log"
 
 [tool.uv]
 package = true
